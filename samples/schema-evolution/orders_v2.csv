@@ -1,0 +1,2 @@
+order_id,customer_id,amount,currency,ordered_at,source_system
+10001,C001,12800,JPY,2026-08-27T10:30:00,SYSTEM_A
