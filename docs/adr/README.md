@@ -15,6 +15,7 @@
 | # | 決定 | ステータス |
 |---|---|---|
 | [0001](0001-isolate-learning-subscription.md) | 学習用リソースを専用Subscriptionへ分離する | 承認済み |
+| [0002](0002-share-state-in-dedicated-storage.md) | 学習用stateを専用Storageで共有する | 承認済み |
 
 ## テンプレート
 

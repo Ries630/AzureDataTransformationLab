@@ -9,6 +9,9 @@
 *.tfplan.json
 *.tfplan.txt
 *.tfplan.md
+backend.local.json
+*.backend.hcl
+.state-backups/
 *.tfvars
 !*.tfvars.example
 crash.log

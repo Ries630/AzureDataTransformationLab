@@ -4,7 +4,7 @@
 
 [Issue #9](https://github.com/Ries630/AzureDataTransformationLab/issues/9)の表示・公開処理を準備している。現時点のGitHub Actionsは、架空のplanを使う検証だけを行う。Azure認証、実planの生成、PRへの自動投稿はまだ接続していない。
 
-既存の7リソースのstateはlocal backendにある。空のstateをCIへ渡すと作成済みリソースも追加として表示されるため、stateの受け渡し方式を決めるまで実planのworkflowを有効にしない。
+stateのAzureRM backend化はsub-issue [#12](https://github.com/Ries630/AzureDataTransformationLab/issues/12)で管理する。[stateの共有と移行](terraform-state.md)を完了してから実planのworkflowを有効にする。
 
 ## ローカルで表示を確認する
 
@@ -48,7 +48,7 @@ Providerの対象照合も同スクリプトで行う。[Terraformのplan JSON](
 
 CIのIdentityを使ってplanしても、既存のユーザー向けRole Assignmentの対象は変えない。CIでは`TF_VAR_operator_object_id`に操作ユーザーのObject IDを明示する。ローカルで省略した場合は従来どおり実行ユーザーを使う。変数の定義は[`variables.tf`](../infra/terraform/variables.tf)を参照する。
 
-## state方式の決定後に接続する範囲
+## state移行後に接続する範囲
 
 - stateの取得と、取得失敗時に空のstateへフォールバックしない処理
 - 保護されたGitHub Environmentと、専用OIDC Identityの作成計画

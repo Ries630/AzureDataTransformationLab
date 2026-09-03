@@ -420,10 +420,11 @@ Resource Group、Storage、権限、Filesystemの宣言がそろいました。
 選択したProviderの取得や、後述するstateの保存先の初期化を行います。
 
 ```bash
-terraform -chdir=infra/terraform init
+node scripts/terraform/backend.mjs init
 ```
 
-`-chdir=infra/terraform`は、Terraformが構成を読むディレクトリの指定です。
+このスクリプトは保存済みstateを確認してから、内部でTerraformの初期化を実行します。
+そこで使う`-chdir=infra/terraform`は、Terraformが構成を読むディレクトリの指定です。
 このリポジトリでは、複数の`.tf`をそのディレクトリにまとめています。
 
 準備を終えると、設定したリソースを扱えるようになります。
@@ -432,7 +433,7 @@ terraform -chdir=infra/terraform init
 ### planで作成予定を確かめる
 
 構成を実際のAzureと照合し、必要な変更を求める操作が**plan**です。
-初回は対象リソースがまだ存在しないため、作成する差分が出ます。
+以降の作成差分は、Phase 1の初回構築時の例です。state移行後は、共有stateと現在の実環境を照合した差分を読みます。
 
 ```bash
 terraform -chdir=infra/terraform plan -out=phase1.tfplan
@@ -503,8 +504,7 @@ Azure上に作成されたStorage Account
 次にplanを実行するときは、この対応を使ってAzure上の対象を読み取り、現在の設定とコードから必要な変更を求めます。
 stateだけを見て、Azureの実物を確認せずに一致と判断する仕組みではありません。
 
-今回の`backend "local" {}`は、stateを手元のファイルに保存する選択です。
-**backend**はstateの保存方法を受け持ち、ローカルでは`terraform.tfstate`が使われます。
+**backend**はstateの保存方法を受け持ちます。Phase 1の初回構築ではlocal backendを使いましたが、CIとの共有に向けてAzureRM backendへ移行します。現在の保存先と移行・復旧手順は[stateの共有と移行](../terraform-state.md)を参照してください。
 このファイルには識別子や機密情報が含まれ得るため、保管とGit管理の扱いは[ローカル入力の手順](../learning-plan.md#2-ローカルの入力を用意する)を参照してください。
 
 ## 9. CSVの読み書きとNo changes

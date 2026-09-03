@@ -27,9 +27,12 @@ jobs:
 
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        root: [infra/terraform, infra/state-backend]
     defaults:
       run:
-        working-directory: infra/terraform
+        working-directory: ${{ matrix.root }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3

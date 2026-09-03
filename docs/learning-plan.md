@@ -89,7 +89,7 @@ LRSかつ学習用途で安価な構成を選ぶ。
 
 | ファイル | 読むポイント |
 |---|---|
-| [`versions.tf`](../infra/terraform/versions.tf) | TerraformとAzureRMのバージョン制約、local backend |
+| [`versions.tf`](../infra/terraform/versions.tf) | TerraformとAzureRMのバージョン制約、AzureRM backend |
 | [`providers.tf`](../infra/terraform/providers.tf) | Azureへの接続、Provider自動登録の抑止、Entra認証 |
 | [`variables.tf`](../infra/terraform/variables.tf) | 環境ごとの入力とその制約 |
 | [`main.tf`](../infra/terraform/main.tf) | Resource Groupと対象Subscriptionの検証 |
@@ -129,7 +129,7 @@ Providerを更新したときは、Mac（Apple Silicon）とCI（Linux x86_64）
 terraform -chdir=infra/terraform providers lock -platform=darwin_arm64 -platform=linux_amd64
 ```
 
-local backendはこのディレクトリ内にstateを保持する。stateを失うと実リソースとの対応を追えなくなるため、適用後は機密ファイルとして手元に保管し、後片付けが済むまで削除しない。複数人での実行やCIからの適用が必要になった時点でremote backendを検討する。
+学習用stateは専用StorageのAzureRM backendへ移す。[stateの共有と移行](terraform-state.md)で保存先の構築と既存stateの移行を済ませてから、以降の操作へ進む。bootstrap root自身のstate保管と復旧方法も同文書を参照する。
 
 ### 3. Microsoft.Storageだけを登録する
 
@@ -151,7 +151,7 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" \
 ### 4. planを作り、作成内容を読む
 
 ```bash
-terraform -chdir=infra/terraform init -input=false
+node scripts/terraform/backend.mjs init
 terraform -chdir=infra/terraform fmt -check -recursive
 terraform -chdir=infra/terraform validate
 terraform -chdir=infra/terraform test
@@ -164,7 +164,7 @@ terraform -chdir=infra/terraform show -json phase1.tfplan \
 
 `terraform test`はAzure APIをモックし、対象の取り違えを拒否できるかを確認する。実際のAzure権限や作成可否は、実planと承認後の適用で確認する。
 
-planの`+`は作成予定を表す。初回はResource Group、Storage、実行ユーザーのRole Assignment、4つのFilesystemの計7件の追加を想定する。
+planの`+`は作成予定を表す。Phase 1の初回構築ではResource Group、Storage、実行ユーザーのRole Assignment、4つのFilesystemの計7件を追加した。state移行直後は、これらを再作成せず差分なしになることを確認する。
 
 plan JSONから対象Subscriptionと操作一覧を確認する。Subscription ID自体を出力せず、ローカルで指定値と照合する。
 
@@ -181,7 +181,7 @@ jq --arg expected "${ARM_SUBSCRIPTION_ID:?}" '
 ' infra/terraform/phase1.tfplan.json
 ```
 
-照合結果がすべて`true`で、Subscription名が対象と一致し、操作一覧が想定した7件の追加だけであることを確認する。コード上でも、全リソースが単一のProviderと新設Resource Group・Storageの参照からつながっていることを照合し、`Personal-Data`への変更がないことを確認する。
+照合結果がすべて`true`で、Subscription名が対象と一致し、操作一覧が今回のコード変更に対応するものだけであることを確認する。state移行直後は`no-op`だけになる。コード上でも、全リソースが単一のProviderと学習用Resource Group・Storageの参照からつながっていることを照合し、`Personal-Data`への変更がないことを確認する。
 
 Storage定義の`is_hns_enabled`が階層名前空間を有効にし、`for_each`が名前をキーとして4つのFilesystemを管理する。`scope`はデータ用ロールの効く範囲をStorageに限定する。Filesystemの`depends_on`は、Storageの存在に加えて権限の付与完了も待つために必要である。
 
