@@ -16,6 +16,18 @@ variable "resource_group_name" {
   nullable    = false
 }
 
+variable "operator_object_id" {
+  description = "Storageを操作するユーザーのObject ID。CIのplanでは実行Identityと分離して指定し、ローカルでは省略できる。"
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = var.operator_object_id == null || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.operator_object_id))
+    error_message = "operator_object_idにはユーザーの有効なObject IDを指定してください。"
+  }
+}
+
 variable "location" {
   description = "学習用リソースを作成するAzureリージョン。"
   type        = string

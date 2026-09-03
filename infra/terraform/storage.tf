@@ -20,7 +20,7 @@ resource "azurerm_storage_account" "lab" {
 resource "azurerm_role_assignment" "operator_blob_data" {
   scope                = azurerm_storage_account.lab.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = coalesce(var.operator_object_id, data.azurerm_client_config.current.object_id)
   principal_type       = "User"
 }
 
