@@ -123,6 +123,12 @@ cp -n infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
 
 Subscription IDは環境変数から渡す。`.tfvars`、state、保存したplanとそのJSON・テキストはGit管理しない。stateやplanには識別子・機密値が含まれ得るため、内容を公開IssueやPRへ貼り付けない。`.terraform.lock.hcl`は選択したProviderを再現するためGit管理する。
 
+Providerを更新したときは、Mac（Apple Silicon）とCI（Linux x86_64）の両方のチェックサムを記録する。
+
+```bash
+terraform -chdir=infra/terraform providers lock -platform=darwin_arm64 -platform=linux_amd64
+```
+
 local backendはこのディレクトリ内にstateを保持する。stateを失うと実リソースとの対応を追えなくなるため、適用後は機密ファイルとして手元に保管し、後片付けが済むまで削除しない。複数人での実行やCIからの適用が必要になった時点でremote backendを検討する。
 
 ### 3. Microsoft.Storageだけを登録する
