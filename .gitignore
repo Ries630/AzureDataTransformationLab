@@ -8,6 +8,7 @@
 *.tfplan
 *.tfplan.json
 *.tfplan.txt
+*.tfplan.md
 *.tfvars
 !*.tfvars.example
 crash.log
