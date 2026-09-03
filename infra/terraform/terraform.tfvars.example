@@ -1,0 +1,10 @@
+# 実際の環境値はterraform.tfvarsへ記載する。Subscription IDは環境変数で渡す。
+resource_group_name  = "rg-adtl-learning"
+storage_account_name = "replacewithuniquename"
+location             = "japaneast"
+
+tags = {
+  project     = "AzureDataTransformationLab"
+  environment = "learning"
+  managed_by  = "terraform"
+}
