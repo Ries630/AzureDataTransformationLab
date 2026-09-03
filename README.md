@@ -9,6 +9,8 @@ Azureサービスの習得自体ではなく、イベント駆動、オーケス
 - [プロジェクト概要](docs/project-brief.md)：目的、前提、制約、完成条件の正
 - [アーキテクチャ](docs/architecture.md)：サービス構成、処理責務、異常系の正
 - [学習計画](docs/learning-plan.md)：実装フェーズ、検証項目、利用ツールの正
+- [Phase 1の実行手順](docs/learning-plan.md#phase-1-storage)：Terraformの初期化からplan・適用・CSV確認・後片付けまで
+- [設計判断の記録](docs/adr/README.md)：Subscription分離などの判断と理由
 - [開始時の引き継ぎメモ](docs/archive/2026-08-27-chatgpt-handoff.md)：履歴として保管する初期資料
 
 現在の作業状況は、GitHubリポジトリを作成した後にIssueで管理する。

@@ -83,6 +83,165 @@ LRSかつ学習用途で安価な構成を選ぶ。
 
 完了条件は`terraform fmt`と`terraform validate`が成功し、承認された`terraform plan`どおりにStorageを作成できることである。
 
+### 1. Terraformのファイルと実行対象を理解する
+
+構成は[`infra/terraform/`](../infra/terraform/)に置く。Terraformは同じディレクトリの`.tf`をまとめて読むため、ファイル名が実行順序を決めるわけではない。
+
+| ファイル | 読むポイント |
+|---|---|
+| [`versions.tf`](../infra/terraform/versions.tf) | TerraformとAzureRMのバージョン制約、local backend |
+| [`providers.tf`](../infra/terraform/providers.tf) | Azureへの接続、Provider自動登録の抑止、Entra認証 |
+| [`variables.tf`](../infra/terraform/variables.tf) | 環境ごとの入力とその制約 |
+| [`main.tf`](../infra/terraform/main.tf) | Resource Groupと対象Subscriptionの検証 |
+| [`storage.tf`](../infra/terraform/storage.tf) | Storage、実行ユーザーの権限、Filesystem間の依存 |
+| [`outputs.tf`](../infra/terraform/outputs.tf) | 後続のCLI操作で使う名前 |
+
+実行対象は`Personal-Sandbox`とする。分離の理由は[ADR-0001](adr/0001-isolate-learning-subscription.md)を参照する。
+
+実行ユーザーにはResource GroupとStorageの作成、および新設Storageへのロール割り当て権限が必要である。TerraformはAzure CLIでログインしたユーザーを使用し、そのユーザーに新設Storage限定のデータ用ロールを付ける。サービス向けManaged Identityは後続Phaseで追加する。
+
+### 2. ローカルの入力を用意する
+
+以降のコマンドはリポジトリルートで実行する。BashまたはZsh、Azure CLI、Terraformに加え、plan JSONの確認に`jq`を使う。
+
+```bash
+umask 077
+export ARM_SUBSCRIPTION_ID="$(az account show --subscription Personal-Sandbox --query id -o tsv)"
+export TF_VAR_subscription_id="${ARM_SUBSCRIPTION_ID:?Subscription IDを取得できていません}"
+
+az account show --subscription "$ARM_SUBSCRIPTION_ID" \
+  --query '{name:name,state:state,userType:user.type}' -o json
+```
+
+結果が`Personal-Sandbox`、`Enabled`、`user`であることを確認する。`az account set`でCLIの既定Subscriptionを変更する必要はない。
+
+初回だけ[`terraform.tfvars.example`](../infra/terraform/terraform.tfvars.example)を`infra/terraform/terraform.tfvars`へコピーし、新規のResource Group名と、Azure全体で一意なStorage Account名を指定する。
+
+```bash
+cp -n infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+```
+
+Subscription IDは環境変数から渡す。`.tfvars`、state、保存したplanとそのJSON・テキストはGit管理しない。stateやplanには識別子・機密値が含まれ得るため、内容を公開IssueやPRへ貼り付けない。`.terraform.lock.hcl`は選択したProviderを再現するためGit管理する。
+
+local backendはこのディレクトリ内にstateを保持する。stateを失うと実リソースとの対応を追えなくなるため、適用後は機密ファイルとして手元に保管し、後片付けが済むまで削除しない。複数人での実行やCIからの適用が必要になった時点でremote backendを検討する。
+
+### 3. Microsoft.Storageだけを登録する
+
+Provider登録はAzure側への変更である。前準備の承認を受けたうえで、未登録の場合だけ実行する。
+
+```bash
+az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --namespace Microsoft.Storage --query registrationState -o tsv
+
+# 未登録であり、登録を承認済みの場合だけ実行する。
+az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --namespace Microsoft.Storage
+```
+
+登録処理は非同期である。`az provider show`を再実行し、`Registered`になってから次へ進む。AzureRMによる自動登録は構成で無効化しているため、plan中に別のProviderを登録することはない。
+
+入力したResource Groupが既存でないことを`az group exists`、Storage Account名が使用可能なことを`az storage account check-name`で確認する。どちらにも`--subscription "$ARM_SUBSCRIPTION_ID"`を明示する。既存のリソースを流用・importせず、新規名を選ぶ。
+
+### 4. planを作り、作成内容を読む
+
+```bash
+terraform -chdir=infra/terraform init -input=false
+terraform -chdir=infra/terraform fmt -check -recursive
+terraform -chdir=infra/terraform validate
+terraform -chdir=infra/terraform test
+terraform -chdir=infra/terraform plan -input=false -out=phase1.tfplan
+terraform -chdir=infra/terraform show -no-color phase1.tfplan \
+  > infra/terraform/phase1.tfplan.txt
+terraform -chdir=infra/terraform show -json phase1.tfplan \
+  > infra/terraform/phase1.tfplan.json
+```
+
+`terraform test`はAzure APIをモックし、対象の取り違えを拒否できるかを確認する。実際のAzure権限や作成可否は、実planと承認後の適用で確認する。
+
+planの`+`は作成予定を表す。初回はResource Group、Storage、実行ユーザーのRole Assignment、4つのFilesystemの計7件の追加を想定する。
+
+plan JSONから対象Subscriptionと操作一覧を確認する。Subscription ID自体を出力せず、ローカルで指定値と照合する。
+
+```bash
+jq --arg expected "${ARM_SUBSCRIPTION_ID:?}" '
+  {
+    subscription_matches: (.variables.subscription_id.value == $expected),
+    subscription: [.prior_state.values.root_module.resources[]
+      | select(.address == "data.azurerm_subscription.current")
+      | {name: .values.display_name, matches: (.values.subscription_id == $expected)}],
+    changes: [.resource_changes[] | select(.mode == "managed")
+      | {address, actions: .change.actions}]
+  }
+' infra/terraform/phase1.tfplan.json
+```
+
+照合結果がすべて`true`で、Subscription名が対象と一致し、操作一覧が想定した7件の追加だけであることを確認する。コード上でも、全リソースが単一のProviderと新設Resource Group・Storageの参照からつながっていることを照合し、`Personal-Data`への変更がないことを確認する。
+
+Storage定義の`is_hns_enabled`が階層名前空間を有効にし、`for_each`が名前をキーとして4つのFilesystemを管理する。`scope`はデータ用ロールの効く範囲をStorageに限定する。Filesystemの`depends_on`は、Storageの存在に加えて権限の付与完了も待つために必要である。
+
+plan提示時には、リージョンとSKU、想定する保存容量・操作回数、取得日の明らかな[公式料金](https://azure.microsoft.com/pricing/details/storage/data-lake/)から費用を見積もる。Hot/LRSでも保存容量、操作、メタデータ、外向き転送等に従量料金がある。予算目標は[プロジェクト概要](project-brief.md#学習環境の制約)を参照する。BudgetとCost AlertはPhase 5で追加するため、この段階では費用を自動停止する仕組みはない。
+
+### 5. 承認されたplanを適用する
+
+**plan内容と費用・後片付け方法を提示し、明示的な適用承認を受けてから実行する。**
+
+```bash
+terraform -chdir=infra/terraform apply phase1.tfplan
+```
+
+保存したplanを指定することで、確認済みの変更を適用する。コード、入力、stateが変わった場合は新しいplanを作り、再度確認・承認する。
+
+Role Assignmentの作成完了と権限の反映完了は同時ではない。[Azureの説明](https://learn.microsoft.com/azure/storage/blobs/assign-azure-role-data-access)では反映に最大10分かかる場合がある。初回にFilesystem作成が403で失敗した場合は、付与先ユーザー・ロール・スコープを確認し、反映を待つ。stateを削除せず再planし、残っている変更を提示して承認後に再適用する。403をキー認証への切り替えで回避しない。
+
+### 6. 作成したStorageとCSVを確認する
+
+```bash
+export LAB_RESOURCE_GROUP="$(terraform -chdir=infra/terraform output -raw resource_group_name)"
+export LAB_STORAGE_ACCOUNT="$(terraform -chdir=infra/terraform output -raw storage_account_name)"
+
+az storage account show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --resource-group "${LAB_RESOURCE_GROUP:?}" --name "${LAB_STORAGE_ACCOUNT:?}" \
+  --query '{hns:isHnsEnabled,sku:sku.name,sharedKey:allowSharedKeyAccess}' -o json
+az storage fs list --subscription "$ARM_SUBSCRIPTION_ID" \
+  --account-name "$LAB_STORAGE_ACCOUNT" --auth-mode login --query '[].name' -o json
+
+az storage fs file upload --subscription "$ARM_SUBSCRIPTION_ID" \
+  --account-name "$LAB_STORAGE_ACCOUNT" --auth-mode login \
+  --file-system landing --path orders_v1.csv \
+  --source samples/valid/orders_v1.csv --overwrite false
+
+LAB_DOWNLOAD="$(mktemp)"
+az storage fs file download --subscription "$ARM_SUBSCRIPTION_ID" \
+  --account-name "$LAB_STORAGE_ACCOUNT" --auth-mode login \
+  --file-system landing --path orders_v1.csv --destination "$LAB_DOWNLOAD" \
+  --overwrite true
+cmp samples/valid/orders_v1.csv "$LAB_DOWNLOAD"
+rm "$LAB_DOWNLOAD"
+
+terraform -chdir=infra/terraform plan -input=false -detailed-exitcode
+```
+
+HNS有効・Standard_LRS・Shared Key無効、4つのFilesystem、CSVの内容一致を確認する。PortalまたはStorage Explorerでも`landing/orders_v1.csv`を開いて構成を確かめる。検証用CSVはTerraform管理対象にしないため、再planが差分なし（終了コード0）になることを確認する。終了コード2は差分あり、1はエラーである。
+
+### 7. 後片付けする
+
+サンプルも含めてデータを削除してよいか確認し、必要なら退避する。まず破棄用planを作り、その対象を確認する。
+
+```bash
+terraform -chdir=infra/terraform plan -destroy -input=false -out=destroy.tfplan
+terraform -chdir=infra/terraform show -no-color destroy.tfplan
+```
+
+**削除対象とデータ消失について明示的な承認を受けてから、次を実行する。**
+
+```bash
+terraform -chdir=infra/terraform apply destroy.tfplan
+az group exists --subscription "${ARM_SUBSCRIPTION_ID:?}" --name "${LAB_RESOURCE_GROUP:?}"
+terraform -chdir=infra/terraform state list
+```
+
+Resource Groupが存在せず、stateの管理対象リソースがなくなったことを確認する。Providerの登録は後片付けで解除しない。Resource Groupへ後続Phaseや手動操作でリソースを追加している場合は、最初の7件だけを前提に削除せず、現在の構成から破棄用planを作り直す。
+
 ## Phase 2: Azure Functionsによる入力検証
 
 Python Functionを実装し、検証ロジックをAzure Functions固有コードから分離してテストする。
