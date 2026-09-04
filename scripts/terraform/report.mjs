@@ -84,6 +84,8 @@ export function validatePlan(plan, expectedSubscription) {
   }
   // データソース、state、変更前後も含め、別Subscriptionの参照を許可しない。
   mapStrings(plan, (value) => {
+    // RBACの操作名はResource IDではなく、末尾もSubscription IDではない。
+    if (/^[a-z][a-z0-9.]*\/subscriptions\/(?:read|write|delete|action|\*)$/i.test(value)) return value;
     for (const match of value.matchAll(/\/subscriptions\/([^/\s"?]+)/gi)) {
       if (match[1].toLowerCase() !== expectedSubscription.toLowerCase()) {
         throw new Error('対象外Subscriptionへの参照があります。');

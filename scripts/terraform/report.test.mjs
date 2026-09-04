@@ -141,6 +141,12 @@ test('子moduleのProviderも照合し、別aliasの取得値や欠落した設�
   assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
 });
 
+test('AzureのSubscription読み取り操作名をResource IDと誤認しない', () => {
+  const plan = fixture();
+  plan.resource_changes[0].change.after.permissions = [{ actions: ['Microsoft.Resources/subscriptions/read'] }];
+  assert.doesNotThrow(() => prepareReport(plan, subscription));
+});
+
 test('planのoutputsとstateのsensitive値も表示用コピーから除去する', () => {
   const plan = fixture();
   plan.output_changes = {
