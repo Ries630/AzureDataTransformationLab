@@ -11,7 +11,7 @@ Azureサービスの習得自体ではなく、イベント駆動、オーケス
 - [学習計画](docs/learning-plan.md)：実装フェーズ、検証項目、利用ツールの正
 - [Phase 1の実行手順](docs/learning-plan.md#phase-1-storage)：Terraformの初期化からplan・適用・CSV確認・後片付けまで
 - [Phase 1の解説](docs/tutorials/phase-1-storage.md)：CSVの保存先からTerraformのコード、権限、実行結果を理解する
-- [Terraform planのPRレビュー](docs/terraform-plan-review.md)：表示処理の確認方法と、CI接続前の未決事項
+- [Terraform planのPRレビュー](docs/terraform-plan-review.md)：OIDCの接続設定とPRコメントでのplan確認
 - [stateの共有と移行](docs/terraform-state.md)：専用Storageの構築、既存stateの移行、復旧と保管
 - [設計判断の記録](docs/adr/README.md)：Subscription分離などの判断と理由
 - [開始時の引き継ぎメモ](docs/archive/2026-08-27-chatgpt-handoff.md)：履歴として保管する初期資料

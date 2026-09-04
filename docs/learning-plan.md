@@ -150,14 +150,14 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" \
 
 ### 4. planを作り、作成内容を読む
 
+PR上での変更確認は[Terraform planのPRレビュー](terraform-plan-review.md)を参照する。以下はローカルで適用対象のsaved planを作成し、機械的に照合する手順である。詳細が必要な場合は`terraform show`でsaved planを確認する。
+
 ```bash
 node scripts/terraform/backend.mjs init
 terraform -chdir=infra/terraform fmt -check -recursive
 terraform -chdir=infra/terraform validate
 terraform -chdir=infra/terraform test
 terraform -chdir=infra/terraform plan -input=false -out=phase1.tfplan
-terraform -chdir=infra/terraform show -no-color phase1.tfplan \
-  > infra/terraform/phase1.tfplan.txt
 terraform -chdir=infra/terraform show -json phase1.tfplan \
   > infra/terraform/phase1.tfplan.json
 ```
