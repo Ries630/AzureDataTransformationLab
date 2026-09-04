@@ -246,7 +246,7 @@ gh api --paginate 'repos/Ries630/AzureDataTransformationLab/actions/workflows/te
   --jq '.workflow_runs[] | select(.status != "completed") | {id,status}'
 ```
 
-`disabled_manually`を確認する。上の全ページ照会に実行が出た場合は、完了を待つか、中止の承認を受けた対象のIDを`LAB_RUN_ID`に設定して`gh run cancel "${LAB_RUN_ID:?}" --repo Ries630/AzureDataTransformationLab`で中止する。照会を繰り返し、未完了の実行が0件（出力なし）になったことを確認するまで切り離しplanへ進まない。ローカルのTerraform処理も終了を確認する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録し、再構築まで休止を維持する。
+`disabled_manually`を確認する。上の全ページ照会に実行が出た場合は、完了を待つか、中止の承認を受けた対象のIDを`LAB_RUN_ID`に設定して`gh run cancel "${LAB_RUN_ID:?}" --repo Ries630/AzureDataTransformationLab`で中止する。照会を繰り返し、未完了の実行が0件（出力なし）になったことを確認するまで切り離しplanへ進まない。ローカルのTerraform処理も終了を確認する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録する。削除を完了した場合は再構築まで休止を維持し、途中で中止する場合は[中止時の復旧](#中止時の復旧)へ進む。
 
 現時点のResource Group内のリソースと全Filesystemのデータ一覧を、stateの管理対象と照合する。サンプルCSVも削除対象なので、最新の学習用remote state、CI用local state、データを非公開の保管先へ退避して内容一致を確認する。stateだけではCSVを復元できない。stateの保管・権限は[stateの保管手順](terraform-state.md#2-認証と保護を確認する)に従い、データもGit管理外の0700ディレクトリ・0600ファイルで保管する。
 
@@ -302,6 +302,31 @@ terraform -chdir=infra/terraform state pull \
 ```
 
 Resource Groupが存在せず（`az group exists`は`false`）、学習用stateの管理対象リソースが0件（最後の照合は`true`・終了コード0）になったことを確認する。`state list`にはdata sourceも出るため、空の出力を条件にせず`mode == "managed"`の実体を数える。CI用rootの再planも差分なしであることを確認し、保持するstate・過去バージョン・保護設定・CI Identityが残っていることを照合する。完了記録には実施時刻と検証結果を残す。学習用rootは定義を残しているため、通常のplanを実行すると再作成予定になる。削除後の差分なし確認には使わない。
+
+#### 中止時の復旧
+
+管理外リソースの検出や削除承認の見送りで後片付けを中止した場合は、中止理由と適用済みの操作を記録し、次のように分岐する。復旧中もworkflowは休止したままとし、保存済みの`detach-lab.tfplan`と`destroy.tfplan`は以後適用しない。
+
+- **学習用rootの削除を開始していない場合**: Resource Group・Storage・Filesystem・データとremote stateが残っていることを確認し、CIの復旧へ進む。
+- **学習用rootの削除を開始した場合、または現状を確認できない場合**: 一部削除やstateとの不整合の可能性があるため、Resource Groupの存在だけで再開しない。ここで本節の手順を終了し、以下のCI権限復旧・workflow再有効化は実施しない。実リソース・データ・stateを照合し、[再構築とCI再開は別作業](#再構築とci再開は別作業)として復旧範囲の確認・承認へ引き渡す。
+
+以下のCI復旧は、学習用rootの削除未開始・環境の残存確認済み・CI接続済みの場合だけ行う。CI未構築の場合は本節の残りを実施せず、中止記録を残して終了する。Git管理外の`infra/ci-plan/cleanup.auto.tfvars`を作成していれば`lab_access_enabled = true`へ戻す。他の端末へ引き継いだ入力も揃える。CI権限解除をまだ適用していない場合も、次回のplanが解除予定に戻らないように入力を確認する。
+
+```bash
+terraform -chdir=infra/ci-plan plan -input=false -out=reattach-lab.tfplan
+terraform -chdir=infra/ci-plan show -no-color reattach-lab.tfplan
+```
+
+解除未適用なら変更なし、解除済みなら`lab_reader`と`lab_blob_reader`のうち失われた読み取り権限だけが作成対象であることを確認する。Identity・OIDC・stateへの権限などにも変更が出た場合は停止する。権限の再作成が必要な場合は、この復旧planを提示して別途承認を受け、適用直前にcode・入力・state・対象を再照合してから`terraform -chdir=infra/ci-plan apply reattach-lab.tfplan`を実行する。CI用rootの再planが差分なしであることを確認する。
+
+学習用rootの通常planで実環境stateを参照できることを確認し、差分があれば理由を確認する（復旧のために自動適用しない）。[PRでの動作と確認](terraform-plan-review.md#prでの動作と確認)に従ってCI入力・権限・Environment設定を照合し、今回休止したworkflowの再開承認を得てから実行する。
+
+```bash
+gh workflow enable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
+gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
+```
+
+`active`を確認して再開日時を記録する。有効化だけではPR planの成功確認にはならないため、次の実行条件を満たすPR更新でEnvironment承認後のplanと公開コメントを確認する。それまでは「workflow再有効化済み・実plan未確認」と記録する。中止を理由に自動で権限を再作成したりworkflowを再開したりしない。
 
 #### 再構築とCI再開は別作業
 
