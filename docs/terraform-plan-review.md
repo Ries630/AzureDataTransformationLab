@@ -46,7 +46,7 @@ Providerの対象照合も同スクリプトで行う。[Terraformのplan JSON](
 
 ## CIと操作ユーザーの分離
 
-CIのIdentityを使ってplanしても、既存のユーザー向けRole Assignmentの対象は変えない。CIでは`TF_VAR_operator_object_id`に操作ユーザーのObject IDを明示する。ローカルで省略した場合は従来どおり実行ユーザーを使う。変数の定義は[`variables.tf`](../infra/terraform/variables.tf)を参照する。
+CIのIdentityを使ってplanしても、既存のユーザー向けRole Assignmentの対象は変えない。CIでは`TF_VAR_operator_object_id`に操作ユーザーのObject IDを明示する。ローカルで省略した場合は従来どおり実行ユーザーを使う。変数の定義は[`variables.tf`](../infra/terraform/variables.tf)を参照する。Resource属性へ渡す際は入力のsensitive表示フラグを除き、フラグの差だけで既存Role Assignmentを更新しない。実環境IDの公開防止は前述の公開境界で扱うため、Terraformの生ログを公開しない。
 
 ## state移行後に接続する範囲
 
