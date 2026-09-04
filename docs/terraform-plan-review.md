@@ -6,6 +6,8 @@
 
 stateのAzureRM backend化はsub-issue [#12](https://github.com/Ries630/AzureDataTransformationLab/issues/12)で管理する。[stateの共有と移行](terraform-state.md)を完了してから実planのworkflowを有効にする。
 
+学習環境を破棄するときのworkflow休止、CI依存の切り離し、再開前の確認は[Phase 1の後片付け](learning-plan.md#7-後片付けする)を参照する。
+
 ## ローカルで表示を確認する
 
 Node.js 24を使用する。依存パッケージの追加は不要であり、GitHub ActionsのコメントAPIとの接続も同じJavaScriptで扱える。

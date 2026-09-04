@@ -3,14 +3,15 @@ data "azurerm_resource_group" "state" {
 }
 
 data "azurerm_resource_group" "lab" {
-  name = var.lab_resource_group_name
+  count = var.lab_access_enabled ? 1 : 0
+  name  = var.lab_resource_group_name
 }
 
 locals {
   subscription_scope = "/subscriptions/${var.subscription_id}"
   state_account      = "${data.azurerm_resource_group.state.id}/providers/Microsoft.Storage/storageAccounts/${var.state_storage_account_name}"
   state_container    = "${local.state_account}/blobServices/default/containers/tfstate"
-  lab_account        = "${data.azurerm_resource_group.lab.id}/providers/Microsoft.Storage/storageAccounts/${var.lab_storage_account_name}"
+  lab_account        = var.lab_access_enabled ? "${data.azurerm_resource_group.lab[0].id}/providers/Microsoft.Storage/storageAccounts/${var.lab_storage_account_name}" : null
 }
 
 resource "azurerm_user_assigned_identity" "plan" {
@@ -57,17 +58,30 @@ resource "azurerm_role_assignment" "subscription_metadata" {
 }
 
 resource "azurerm_role_assignment" "lab_reader" {
-  scope                = data.azurerm_resource_group.lab.id
+  count                = var.lab_access_enabled ? 1 : 0
+  scope                = data.azurerm_resource_group.lab[0].id
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.plan.principal_id
   principal_type       = "ServicePrincipal"
 }
 
 resource "azurerm_role_assignment" "lab_blob_reader" {
+  count                = var.lab_access_enabled ? 1 : 0
   scope                = local.lab_account
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_user_assigned_identity.plan.principal_id
   principal_type       = "ServicePrincipal"
+}
+
+# 接続切替の導入だけで既存権限を削除・再作成しないよう、対応を明示する。
+moved {
+  from = azurerm_role_assignment.lab_reader
+  to   = azurerm_role_assignment.lab_reader[0]
+}
+
+moved {
+  from = azurerm_role_assignment.lab_blob_reader
+  to   = azurerm_role_assignment.lab_blob_reader[0]
 }
 
 resource "azurerm_role_assignment" "state_reader" {
