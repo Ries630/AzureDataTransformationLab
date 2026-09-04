@@ -231,22 +231,106 @@ HNS有効・Standard_LRS・Shared Key無効、4つのFilesystem、CSVの内容�
 
 ### 7. 後片付けする
 
-サンプルも含めてデータを削除してよいか確認し、必要なら退避する。まず破棄用planを作り、その対象を確認する。
+この節は、学習環境が不要になったときに実施する。Phase 1の構築完了は削除完了を意味しない。削除すると後続Phaseへ進む前に再構築が必要になる。
+
+#### 準備とCIの休止
+
+対象Subscriptionと入力を[ローカル入力の手順](#2-ローカルの入力を用意する)で確認する。学習用rootだけを削除し、state保存先・履歴とCI Identityは保持する。保存先の保護は[stateの後片付け規定](terraform-state.md#復旧と後片付け)を参照する。Provider登録も解除しない。
+
+CI接続済みの場合は、承認を受けてAzure接続ありのPR planを休止する。認証不要の`terraform.yml`は停止しない。
+
+```bash
+gh workflow disable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
+gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
+gh api --paginate 'repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml/runs?per_page=100' \
+  --jq '.workflow_runs[] | select(.status != "completed") | {id,status}'
+```
+
+`disabled_manually`を確認する。上の全ページ照会に実行が出た場合は、完了を待つか、中止の承認を受けた対象のIDを`LAB_RUN_ID`に設定して`gh run cancel "${LAB_RUN_ID:?}" --repo Ries630/AzureDataTransformationLab`で中止する。照会を繰り返し、未完了の実行が0件（出力なし）になったことを確認するまで切り離しplanへ進まない。ローカルのTerraform処理も終了を確認する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録する。削除を完了した場合は再構築まで休止を維持し、途中で中止する場合は[中止時の復旧](#中止時の復旧)へ進む。
+
+現時点のResource Group内のリソースと全Filesystemのデータ一覧を、stateの管理対象と照合する。サンプルCSVも削除対象なので、最新の学習用remote state、CI用local state、データを非公開の保管先へ退避して内容一致を確認する。stateだけではCSVを復元できない。stateの保管・権限は[stateの保管手順](terraform-state.md#2-認証と保護を確認する)に従い、データもGit管理外の0700ディレクトリ・0600ファイルで保管する。
+
+**追加データや管理外リソースが見つかった場合は停止する。** RG・Storageの削除は内部のデータやリソースも失わせるため、Terraformのplanに個別表示されなくても削除の影響範囲に入る。退避・移動または削除対象の再確定を済ませ、改めて承認を得るまで適用しない。
+
+#### CIの依存を切り離すplan
+
+CI接続済みの場合、[`infra/ci-plan/`](../infra/ci-plan/)が別stateで管理する学習用RG・Storageの読み取り権限を先に解除する。`lab_access_enabled`の既定値は`true`であり、既存アドレスからの移行は[`main.tf`](../infra/ci-plan/main.tf)の`moved`ブロックで扱う。[Terraformの説明](https://developer.hashicorp.com/terraform/language/modules/develop/refactoring#enable-count-or-for_each-for-a-resource)も参照できる。
+
+初回の準備修正では、接続有効時のplanに不要な再作成がないことを先に確認する。その後、Git管理外の`infra/ci-plan/cleanup.auto.tfvars`を次の内容で用意する。既に存在する場合は上書きせず内容を確認する。
+
+```hcl
+lab_access_enabled = false
+```
+
+これは削除後も保持するローカル入力である。一度限りの`-var`だけにすると次のplanが既定値へ戻るため、保存した入力を使う。CI用rootを別端末で操作する場合も同じ入力を非公開経路で引き継ぐ。
+
+```bash
+terraform -chdir=infra/ci-plan plan -input=false -out=detach-lab.tfplan
+terraform -chdir=infra/ci-plan show -no-color detach-lab.tfplan
+```
+
+操作が`lab_reader`と`lab_blob_reader`の2件の削除だけであることを確認する。CI Identity・OIDC・Subscription名前確認権限・stateの読み取りとlease権限は保持する。これらにも変更が出る場合は停止する。CI未構築の場合だけ、この切り離しは不要である。
+
+#### 学習用rootの破棄plan
 
 ```bash
 terraform -chdir=infra/terraform plan -destroy -input=false -out=destroy.tfplan
 terraform -chdir=infra/terraform show -no-color destroy.tfplan
 ```
 
-**削除対象とデータ消失について明示的な承認を受けてから、次を実行する。**
+CI解除planと学習用destroy planを別々に確認し、対象が`Personal-Sandbox`に限定されることを照合する。初期構築の7件という数だけで判断せず、現在の構成・データ・退避結果を提示する。生のplanやstateを公開Issue・PRへ貼り付けない。
+
+**ここで一度止まり、削除対象とデータ消失について明示的な承認を受けてから、次へ進む。準備修正のPR承認・マージは削除の承認ではない。**
+
+#### 承認後の適用と確認
+
+CI接続済みの場合は先に保存した`detach-lab.tfplan`を適用し、`lab_access_enabled=false`のままCI用rootの再planが差分なしになることを確認する。その後に学習用rootを破棄する。
+
+```bash
+terraform -chdir=infra/ci-plan apply detach-lab.tfplan
+terraform -chdir=infra/ci-plan plan -input=false -detailed-exitcode
+```
+
+各planの適用直前にcode・入力・対応するstate、対象リソースとデータを再確認する。CI権限解除後も学習用planが承認対象と一致することを照合し、変化があれば古いplanを適用せず、作り直して再確認・承認する。適用に失敗した場合もstateを削除せず再planする。
 
 ```bash
 terraform -chdir=infra/terraform apply destroy.tfplan
 az group exists --subscription "${ARM_SUBSCRIPTION_ID:?}" --name "${LAB_RESOURCE_GROUP:?}"
-terraform -chdir=infra/terraform state list
+set -o pipefail
+terraform -chdir=infra/terraform state pull \
+  | jq -e '[.resources[]? | select(.mode == "managed") | .instances[]?] | length == 0'
 ```
 
-Resource Groupが存在せず、stateの管理対象リソースがなくなったことを確認する。Providerの登録は後片付けで解除しない。Resource Groupへ後続Phaseや手動操作でリソースを追加している場合は、最初の7件だけを前提に削除せず、現在の構成から破棄用planを作り直す。
+Resource Groupが存在せず（`az group exists`は`false`）、学習用stateの管理対象リソースが0件（最後の照合は`true`・終了コード0）になったことを確認する。`state list`にはdata sourceも出るため、空の出力を条件にせず`mode == "managed"`の実体を数える。CI用rootの再planも差分なしであることを確認し、保持するstate・過去バージョン・保護設定・CI Identityが残っていることを照合する。完了記録には実施時刻と検証結果を残す。学習用rootは定義を残しているため、通常のplanを実行すると再作成予定になる。削除後の差分なし確認には使わない。
+
+#### 中止時の復旧
+
+管理外リソースの検出や削除承認の見送りで後片付けを中止した場合は、中止理由と適用済みの操作を記録し、次のように分岐する。復旧中もworkflowは休止したままとし、保存済みの`detach-lab.tfplan`と`destroy.tfplan`は以後適用しない。
+
+- **学習用rootの削除を開始していない場合**: Resource Group・Storage・Filesystem・データとremote stateが残っていることを確認し、CIの復旧へ進む。
+- **学習用rootの削除を開始した場合、または現状を確認できない場合**: 一部削除やstateとの不整合の可能性があるため、Resource Groupの存在だけで再開しない。ここで本節の手順を終了し、以下のCI権限復旧・workflow再有効化は実施しない。実リソース・データ・stateを照合し、[再構築とCI再開は別作業](#再構築とci再開は別作業)として復旧範囲の確認・承認へ引き渡す。
+
+以下のCI復旧は、学習用rootの削除未開始・環境の残存確認済み・CI接続済みの場合だけ行う。CI未構築の場合は本節の残りを実施せず、中止記録を残して終了する。Git管理外の`infra/ci-plan/cleanup.auto.tfvars`を作成していれば`lab_access_enabled = true`へ戻す。他の端末へ引き継いだ入力も揃える。CI権限解除をまだ適用していない場合も、次回のplanが解除予定に戻らないように入力を確認する。
+
+```bash
+terraform -chdir=infra/ci-plan plan -input=false -out=reattach-lab.tfplan
+terraform -chdir=infra/ci-plan show -no-color reattach-lab.tfplan
+```
+
+解除未適用なら変更なし、解除済みなら`lab_reader`と`lab_blob_reader`のうち失われた読み取り権限だけが作成対象であることを確認する。Identity・OIDC・stateへの権限などにも変更が出た場合は停止する。権限の再作成が必要な場合は、この復旧planを提示して別途承認を受け、適用直前にcode・入力・state・対象を再照合してから`terraform -chdir=infra/ci-plan apply reattach-lab.tfplan`を実行する。CI用rootの再planが差分なしであることを確認する。
+
+学習用rootの通常planで実環境stateを参照できることを確認し、差分があれば理由を確認する（復旧のために自動適用しない）。[PRでの動作と確認](terraform-plan-review.md#prでの動作と確認)に従ってCI入力・権限・Environment設定を照合し、今回休止したworkflowの再開承認を得てから実行する。
+
+```bash
+gh workflow enable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
+gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
+```
+
+`active`を確認して再開日時を記録する。有効化だけではPR planの成功確認にはならないため、次の実行条件を満たすPR更新でEnvironment承認後のplanと公開コメントを確認する。それまでは「workflow再有効化済み・実plan未確認」と記録する。中止を理由に自動で権限を再作成したりworkflowを再開したりしない。
+
+#### 再構築とCI再開は別作業
+
+現在の`backend.mjs init`は管理対象0件のstateを拒否する。破棄後の失敗を回避するために、stateを削除したり空state拒否を緩めたりしない。再構築時は保持した空stateを正として使う手順を別途確認・承認し、学習用リソースとCIの読み取り権限を復旧する。その後に入力・権限・通常planを確認してからPR planの再開を承認する。本節の削除承認には、再構築とworkflowの再開を含めない。
 
 ## Phase 2: Azure Functionsによる入力検証
 

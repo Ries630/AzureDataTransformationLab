@@ -1,5 +1,6 @@
 state_resource_group_name  = "rg-example-state"
 state_storage_account_name = "exampleuniquestate"
+lab_access_enabled         = true
 lab_resource_group_name    = "rg-example-lab"
 lab_storage_account_name   = "exampleuniquelab"
 oidc_subject_prefix        = "repo:Ries630@82589136/AzureDataTransformationLab@1350311992"

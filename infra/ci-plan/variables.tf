@@ -21,6 +21,13 @@ variable "state_storage_account_name" {
   nullable    = false
 }
 
+variable "lab_access_enabled" {
+  description = "学習環境へのCI読み取り接続を有効にする。後片付け時だけfalseにして権限を解除する。"
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "lab_resource_group_name" {
   description = "planが読み取る学習用Resource Group名。"
   type        = string
