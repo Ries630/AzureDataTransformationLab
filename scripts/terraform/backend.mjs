@@ -163,8 +163,14 @@ export function runBackend(command, { root, env = process.env, run = execute } =
   checkCache(root, config, 'azurerm', tenantId);
   const current = fingerprint(JSON.parse(run('terraform', [`-chdir=${root}`, 'state', 'pull'])), config.subscription_id);
   const baseline = JSON.parse(readFileSync(join(root, '.state-backups/baseline.json'), 'utf8'));
-  const backup = fingerprint(JSON.parse(readFileSync(join(baseline.backupDirectory, 'terraform.tfstate'), 'utf8')), config.subscription_id);
-  if (current.sha256 !== baseline.sha256 || backup.sha256 !== baseline.sha256) throw new Error('移行前後のstateと退避元が一致しません。');
+  const backupState = JSON.parse(readFileSync(join(baseline.backupDirectory, 'terraform.tfstate'), 'utf8'));
+  const backup = fingerprint(backupState, config.subscription_id);
+  // remote backendへの永続化はserialを一段増やすことがある。他の属性の差は許容しない。
+  const persisted = fingerprint({ ...backupState, serial: backupState.serial + 1 }, config.subscription_id);
+  if (backup.sha256 !== baseline.sha256 ||
+      (current.sha256 !== baseline.sha256 && current.sha256 !== persisted.sha256)) {
+    throw new Error('移行前後のstateと退避元が一致しません。');
+  }
   return { verified: true, managedResources: current.managedResources };
 }
 

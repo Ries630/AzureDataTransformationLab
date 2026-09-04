@@ -91,14 +91,32 @@ test('Azureの読み取り失敗時も空stateでinitしない', (t) => {
   assert.ok(!existsSync(join(f.root, 'remote.backend.hcl')));
 });
 
-test('移行後のlineage・serial・属性の一致を確認する', (t) => {
+test('移行後の同一性を確認し、永続化によるserialの一段増加だけを許容する', (t) => {
   const f = fixture(t);
   runBackend('prepare-migration', f);
   f.remote.exists = true;
   assert.deepEqual(runBackend('init', f), { initialized: true });
   assert.deepEqual(runBackend('verify-migration', f), { verified: true, managedResources: 1 });
   f.remote.state = { ...f.state, serial: 9 };
+  assert.deepEqual(runBackend('verify-migration', f), { verified: true, managedResources: 1 });
+  f.remote.state = { ...f.state, serial: 10 };
   assert.throws(() => runBackend('verify-migration', f), /一致/);
+});
+
+test('serialが一段増加していてもlineage・属性・outputsの変更は拒否する', (t) => {
+  for (const field of ['lineage', 'resources', 'outputs']) {
+    const f = fixture(t);
+    runBackend('prepare-migration', f);
+    f.remote.exists = true;
+    runBackend('init', f);
+    const changed = structuredClone(f.state);
+    changed.serial += 1;
+    if (field === 'lineage') changed.lineage = '33333333-3333-4333-8333-333333333333';
+    if (field === 'resources') changed.resources[0].instances[0].attributes.token = 'changed';
+    if (field === 'outputs') changed.outputs = { changed: { value: 'changed', type: 'string' } };
+    f.remote.state = changed;
+    assert.throws(() => runBackend('verify-migration', f), /一致/);
+  }
 });
 
 test('Blobが存在しても空stateならinitの成功を返さない', (t) => {

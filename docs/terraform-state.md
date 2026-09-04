@@ -53,6 +53,8 @@ Azure CLIで、Storageの構成、Blobサービスの保護設定、削除ロッ
 
 bootstrap root自身のstateも機密バックアップとして保管する。適用後の`infra/state-backend/terraform.tfstate`を`infra/state-backend/.state-backups/bootstrap-<日時>/terraform.tfstate`へ複製し、端末の紛失・故障にも備えた非公開の保管先へ退避する。ディレクトリは0700、ファイルは0600とし、元ファイルとのハッシュ一致を確認する。学習用stateの退避先`infra/terraform/.state-backups/`とは分ける。バックアップの内容をIssue、PR、Actions artifactへ載せない。
 
+端末外の退避先として、同じ非公開containerの`bootstrap-backups/bootstrap-<日時>.tfstate`を利用できる。Entra認証で新規Blobとしてアップロードし、既存バックアップを上書きせず、転送前後のチェックサムを照合する。これはbootstrap rootのbackend変更ではない。復元時はAzure CLIで対象世代を取得し、下記のlocal state復元手順へ進む。
+
 ## 3. 移行前のstateを退避する
 
 移行中は学習用rootに対するplan/applyを止める。既存の`terraform.tfstate`とlocal backendの初期化キャッシュを残したまま実行する。`terraform init -reconfigure`を先に実行すると移行元の情報を失うため、移行前には実行しない。
@@ -81,7 +83,7 @@ node scripts/terraform/backend.mjs verify-migration
 terraform -chdir=infra/terraform plan -input=false -detailed-exitcode
 ```
 
-照合コマンドは、backendキャッシュの保存先と認証方式、退避したバックアップ実体、移行前後のlineage・serial・属性・outputsを確認する。再planの終了コード0で、実リソースへの意図しない差分がないことを確認する。失敗した場合はlocal/remote stateを削除せず停止する。
+照合コマンドは、backendキャッシュの保存先と認証方式、退避したバックアップ実体、移行前後のlineage・serial・属性・outputsを確認する。serialは同値または移行時の一段増加を許容し、他の差分は拒否する。[Terraformのremote state永続化処理](https://github.com/hashicorp/terraform/blob/v1.16.0/internal/states/remote/state.go#L158-L212)に基づく。再planの終了コード0で、実リソースへの意図しない差分がないことを確認する。失敗した場合はlocal/remote stateを削除せず停止する。
 
 Azure CLIの`az storage blob show --auth-mode login`でも保存されたBlobのサイズとlease状態を確認する。ロック確認は、承認済みの検証として同じBlobへ短いleaseを取得し、その間の`terraform plan -lock-timeout=1s`がロック取得で失敗することを確認した後、leaseを解放して再planする。`force-unlock`で稼働中の処理のロックを解除しない。
 
