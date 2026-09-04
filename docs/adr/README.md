@@ -16,6 +16,7 @@
 |---|---|---|
 | [0001](0001-isolate-learning-subscription.md) | 学習用リソースを専用Subscriptionへ分離する | 承認済み |
 | [0002](0002-share-state-in-dedicated-storage.md) | 学習用stateを専用Storageで共有する | 承認済み |
+| [0003](0003-use-scoped-oidc-for-pr-plans.md) | PRのplanを専用Identityと承認付きEnvironmentで実行する | 承認済み |
 
 ## テンプレート
 

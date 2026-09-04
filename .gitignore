@@ -11,6 +11,7 @@
 *.tfplan.md
 backend.local.json
 *.backend.hcl
+*.tfvars.json
 .state-backups/
 *.tfvars
 !*.tfvars.example
