@@ -242,10 +242,11 @@ CI接続済みの場合は、承認を受けてAzure接続ありのPR planを休
 ```bash
 gh workflow disable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
 gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
-gh run list --repo Ries630/AzureDataTransformationLab --workflow terraform-plan.yml
+gh api --paginate 'repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml/runs?per_page=100' \
+  --jq '.workflow_runs[] | select(.status != "completed") | {id,status}'
 ```
 
-`disabled_manually`を確認し、開始済み・承認待ちの実行やローカルのTerraform処理が残っていれば先に解消する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録し、再構築まで休止を維持する。
+`disabled_manually`を確認する。上の全ページ照会に実行が出た場合は、完了を待つか、中止の承認を受けた対象のIDを`LAB_RUN_ID`に設定して`gh run cancel "${LAB_RUN_ID:?}" --repo Ries630/AzureDataTransformationLab`で中止する。照会を繰り返し、未完了の実行が0件（出力なし）になったことを確認するまで切り離しplanへ進まない。ローカルのTerraform処理も終了を確認する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録し、再構築まで休止を維持する。
 
 現時点のResource Group内のリソースと全Filesystemのデータ一覧を、stateの管理対象と照合する。サンプルCSVも削除対象なので、最新の学習用remote state、CI用local state、データを非公開の保管先へ退避して内容一致を確認する。stateだけではCSVを復元できない。stateの保管・権限は[stateの保管手順](terraform-state.md#2-認証と保護を確認する)に従い、データもGit管理外の0700ディレクトリ・0600ファイルで保管する。
 
@@ -295,10 +296,12 @@ terraform -chdir=infra/ci-plan plan -input=false -detailed-exitcode
 ```bash
 terraform -chdir=infra/terraform apply destroy.tfplan
 az group exists --subscription "${ARM_SUBSCRIPTION_ID:?}" --name "${LAB_RESOURCE_GROUP:?}"
-terraform -chdir=infra/terraform state list
+set -o pipefail
+terraform -chdir=infra/terraform state pull \
+  | jq -e '[.resources[]? | select(.mode == "managed") | .instances[]?] | length == 0'
 ```
 
-Resource Groupが存在せず、学習用stateの管理対象リソースが0件になったことを確認する。CI用rootの再planも差分なしであることを確認し、保持するstate・過去バージョン・保護設定・CI Identityが残っていることを照合する。完了記録には実施時刻と検証結果を残す。学習用rootは定義を残しているため、通常のplanを実行すると再作成予定になる。削除後の差分なし確認には使わない。
+Resource Groupが存在せず（`az group exists`は`false`）、学習用stateの管理対象リソースが0件（最後の照合は`true`・終了コード0）になったことを確認する。`state list`にはdata sourceも出るため、空の出力を条件にせず`mode == "managed"`の実体を数える。CI用rootの再planも差分なしであることを確認し、保持するstate・過去バージョン・保護設定・CI Identityが残っていることを照合する。完了記録には実施時刻と検証結果を残す。学習用rootは定義を残しているため、通常のplanを実行すると再作成予定になる。削除後の差分なし確認には使わない。
 
 #### 再構築とCI再開は別作業
 
