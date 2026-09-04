@@ -1,0 +1,92 @@
+name: Terraform PR plan
+
+on:
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
+      - 'scripts/terraform/**'
+      - '.github/workflows/terraform-plan.yml'
+
+permissions: {}
+
+concurrency:
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner &&
+      github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: terraform-plan
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+      - name: Check trusted PR context
+        run: node scripts/terraform/plan.mjs check-context
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.16.0
+          terraform_wrapper: false
+      - name: Install pinned renderer
+        run: node scripts/terraform/install-tfplan2md.mjs "$RUNNER_TEMP/tfplan2md"
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Generate verified public report
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: 'true'
+          TERRAFORM_BACKEND_CONFIG: ${{ secrets.TERRAFORM_BACKEND_CONFIG }}
+          TERRAFORM_INPUTS: ${{ secrets.TERRAFORM_INPUTS }}
+          TFPLAN2MD_PATH: ${{ runner.temp }}/tfplan2md/tfplan2md
+        run: node scripts/terraform/plan.mjs "$RUNNER_TEMP/plan-public/report.md"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-plan-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan-public/report.md
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: terraform-plan-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan-public
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { readFile } = await import('node:fs/promises');
+            const { pathToFileURL } = await import('node:url');
+            const { publishComment } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/terraform/comment.mjs`));
+            const body = await readFile(`${process.env.RUNNER_TEMP}/plan-public/report.md`, 'utf8');
+            await publishComment({ github, ...context.repo, number: context.issue.number,
+              headSha: context.payload.pull_request.head.sha, body });

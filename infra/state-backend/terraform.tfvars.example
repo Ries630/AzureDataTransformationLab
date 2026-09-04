@@ -1,0 +1,4 @@
+# 実値はterraform.tfvarsに置き、Subscription IDは環境変数で渡す。
+resource_group_name  = "rg-adtl-state"
+storage_account_name = "replacewithuniquename"
+location             = "japaneast"

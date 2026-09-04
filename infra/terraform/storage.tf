@@ -20,8 +20,9 @@ resource "azurerm_storage_account" "lab" {
 resource "azurerm_role_assignment" "operator_blob_data" {
   scope                = azurerm_storage_account.lab.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_client_config.current.object_id
-  principal_type       = "User"
+  # 入力のsensitive伝播だけで既存stateとの差分を作らない。公開時のID除去はreport.mjsが行う。
+  principal_id   = nonsensitive(coalesce(var.operator_object_id, data.azurerm_client_config.current.object_id))
+  principal_type = "User"
 }
 
 resource "azurerm_storage_data_lake_gen2_filesystem" "zones" {
