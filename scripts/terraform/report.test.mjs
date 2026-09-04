@@ -11,6 +11,18 @@ function fixture() {
     format_version: '1.2',
     terraform_version: '1.16.0',
     variables: { subscription_id: { value: subscription } },
+    configuration: {
+      provider_config: {
+        azurerm: {
+          full_name: 'registry.terraform.io/hashicorp/azurerm',
+          expressions: { subscription_id: { constant_value: subscription } },
+        },
+      },
+      root_module: { resources: [{
+        address: 'azurerm_resource_group.lab',
+        mode: 'managed', type: 'azurerm_resource_group', name: 'lab', provider_config_key: 'azurerm',
+      }] },
+    },
     prior_state: { values: { root_module: { resources: [{
       address: 'data.azurerm_subscription.current',
       mode: 'data',
@@ -63,6 +75,70 @@ test('Personal-Dataや別SubscriptionのResource IDを含むplanを拒否する'
     `/subscriptions/${principal}/resourceGroups/rg-example`;
   assert.throws(() => prepareReport(wrongResource, subscription));
   assert.throws(() => prepareReport(fixture(), principal));
+});
+
+test('新規IDがunknownでも別Subscriptionのprovider aliasを拒否する', () => {
+  const plan = fixture();
+  plan.configuration.provider_config['azurerm.other'] = {
+    full_name: 'registry.terraform.io/hashicorp/azurerm', alias: 'other',
+    expressions: { subscription_id: { constant_value: principal } },
+  };
+  plan.configuration.root_module.resources[0].provider_config_key = 'azurerm.other';
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
+  plan.configuration.provider_config['azurerm.other'].expressions.subscription_id.constant_value = subscription;
+  assert.equal(prepareReport(plan, subscription).counts.add, 1);
+});
+
+test('変数参照を推測せず、同じProviderの取得済みSubscriptionで照合する', () => {
+  const plan = fixture();
+  plan.configuration.provider_config.azurerm.expressions.subscription_id = {
+    references: ['var.subscription_id'],
+  };
+  plan.configuration.root_module.resources.push({
+    address: 'data.azurerm_client_config.current', mode: 'data',
+    type: 'azurerm_client_config', name: 'current', provider_config_key: 'azurerm',
+  });
+  const client = {
+    address: 'data.azurerm_client_config.current', mode: 'data', type: 'azurerm_client_config',
+    values: { subscription_id: subscription },
+  };
+  plan.prior_state.values.root_module.resources.push(client);
+  assert.deepEqual(prepareReport(plan, subscription).counts, { add: 1, change: 0, destroy: 0 });
+  client.values.subscription_id = principal;
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
+  client.values.subscription_id = subscription;
+  plan.resource_changes.push({
+    ...client, change: { actions: ['read'], after: {}, after_unknown: { subscription_id: true } },
+  });
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
+});
+
+test('子moduleのProviderも照合し、別aliasの取得値や欠落した設定を信用しない', () => {
+  const plan = fixture();
+  const resource = plan.configuration.root_module.resources.pop();
+  resource.address = 'module.child.azurerm_resource_group.lab';
+  resource.provider_config_key = 'azurerm.other';
+  plan.resource_changes[0].address = resource.address;
+  plan.configuration.root_module.module_calls = { child: { module: { resources: [resource] } } };
+  plan.configuration.provider_config['azurerm.other'] = {
+    full_name: 'registry.terraform.io/hashicorp/azurerm', alias: 'other',
+    expressions: { subscription_id: { references: ['var.subscription_id'] } },
+  };
+  const client = {
+    address: 'data.azurerm_client_config.other', mode: 'data',
+    type: 'azurerm_client_config', name: 'other', provider_config_key: 'azurerm',
+  };
+  plan.configuration.root_module.resources.push(client);
+  plan.prior_state.values.root_module.resources.push({
+    ...client, values: { subscription_id: subscription },
+  });
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
+  client.provider_config_key = 'azurerm.other';
+  assert.equal(prepareReport(plan, subscription).counts.add, 1);
+  delete plan.configuration.provider_config['azurerm.other'];
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
+  delete plan.configuration;
+  assert.throws(() => prepareReport(plan, subscription), /ProviderのSubscription/);
 });
 
 test('planのoutputsとstateのsensitive値も表示用コピーから除去する', () => {

@@ -36,6 +36,8 @@ saved planを正とし、JSONとMarkdownは派生データとして扱う。作�
 
 [`report.mjs`](../scripts/terraform/report.mjs)は元のplanでSubscriptionの一致、取得した名前、別Subscriptionへの参照、planの完了状態、操作種別を検証する。その後に表示専用コピーを作り、Terraformのsensitive情報で指定された値を除去し、UUIDを同じ入力に対して同じ架空UUIDへ置換する。
 
+Providerの対象照合も同スクリプトで行う。[Terraformのplan JSON](https://developer.hashicorp.com/terraform/internals/json-format#expression-representation)にある`references`は式の依存先であり、評価結果ではない。変数を使うProviderでは、同じProviderに結び付いた`azurerm_client_config`の取得結果が必要になる。取得がapplyまで遅延するなど、対象を確定できないplanは公開しない。
+
 `tfplan2md`はこのコピーだけを読み、GitHub向けに詳細を折りたたんだMarkdownを生成する。生成後も元の機密文字列とUUIDが残っていないか検査する。変換失敗、検証失敗、コメント上限超過の場合は出力を公開しない。診断に元データを転記しない。
 
 この処理はSubscriptionの実在確認、Azureの認可、PRの信頼判定を代替しない。将来のworkflowでは、認証後の対象照合と保護された実行環境を別途必要とする。

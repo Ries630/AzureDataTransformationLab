@@ -13,6 +13,56 @@ function resourcesIn(module) {
   ];
 }
 
+/** moduleへ渡されたaliasも、元のProvider設定へ結び付ける。 */
+function configuredResourcesIn(module) {
+  return [
+    ...(module?.resources ?? []),
+    ...Object.values(module?.module_calls ?? {}).flatMap((call) => configuredResourcesIn(call.module)),
+  ];
+}
+
+/** IDが未確定のリソースも、使用するProviderのSubscriptionを確認する。 */
+function validateProviderSubscriptions(plan, expectedSubscription) {
+  const providers = plan.configuration?.provider_config;
+  if (!providers || !plan.configuration?.root_module) {
+    throw new Error('ProviderのSubscriptionを確認できません。');
+  }
+  const configured = configuredResourcesIn(plan.configuration.root_module);
+  for (const resource of configured) {
+    if (!providers[resource.provider_config_key]) {
+      throw new Error('ProviderのSubscriptionを確認できません。');
+    }
+  }
+  for (const key of new Set(configured.map((resource) => resource.provider_config_key))) {
+    const provider = providers[key];
+    if (provider.full_name !== 'registry.terraform.io/hashicorp/azurerm') continue;
+    const expression = provider.expressions?.subscription_id;
+    let subscriptionIds = [];
+    if (expression && Object.hasOwn(expression, 'constant_value')) {
+      subscriptionIds = [expression.constant_value];
+    } else if (expression) {
+      // referencesは式の依存先であり、評価結果ではない。同じProviderの実取得値を使う。
+      const clients = configured.filter((resource) => resource.provider_config_key === key &&
+        resource.mode === 'data' && resource.type === 'azurerm_client_config');
+      const addresses = new Set(clients.map((resource) => resource.address));
+      const deferred = plan.resource_changes.some((resource) =>
+        addresses.has(resource.address) && resource.change?.actions?.includes('read'));
+      if (!deferred) {
+        // plan時にrefresh済みのdataはprior_stateにだけ含まれることがある。
+        subscriptionIds = [
+          ...resourcesIn(plan.prior_state?.values?.root_module),
+          ...resourcesIn(plan.planned_values?.root_module),
+        ].filter((resource) => addresses.has(resource.address) && resource.mode === 'data' &&
+          resource.type === 'azurerm_client_config').map((resource) => resource.values?.subscription_id);
+      }
+    }
+    if (subscriptionIds.length === 0 || subscriptionIds.some((id) =>
+      typeof id !== 'string' || id.toLowerCase() !== expectedSubscription.toLowerCase())) {
+      throw new Error('ProviderのSubscriptionが一致しないか確認できません。');
+    }
+  }
+}
+
 /** 表示処理とは独立して、planの実行対象と完了状態を検証する。 */
 export function validatePlan(plan, expectedSubscription) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expectedSubscription ?? '') ||
@@ -22,6 +72,7 @@ export function validatePlan(plan, expectedSubscription) {
   if (plan.errored || plan.complete === false || !Array.isArray(plan.resource_changes)) {
     throw new Error('完了したplanが必要です。');
   }
+  validateProviderSubscriptions(plan, expectedSubscription);
   const subscriptions = [
     ...resourcesIn(plan.prior_state?.values?.root_module),
     ...resourcesIn(plan.planned_values?.root_module),
