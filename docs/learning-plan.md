@@ -373,6 +373,8 @@ uv run --locked functions/validator/function_app.py sample samples/invalid/order
 
 `test_pure.py`はAzure SDKを使わずに公開関数を確認し、`sample`ではVALIDとINVALIDの構造化結果を読む。既存の不正サンプルはコピーしてから1項目ずつ変更し、どのエラーが消え、どのエラーが残るかを記録する。CSVの規則は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)を参照する。
 
+以下の実CSVを使うローカルHTTP確認は、学習用Storageの再構築とサンプル配置後に行う。未復元の場合は上のテスト・サンプル実行を済ませ、[基盤のplan](#5-azureの基盤をplanで確認する)へ進み、Storage復元後に本節へ戻る。
+
 `serve`を起動する前に、Functionsホストの状態保存先としてAzuriteを起動する。ローカル設定を作成して`LAB_STORAGE_ACCOUNT_NAME`を実際の学習用Storage名へ変更し、`AZURE_CLIENT_ID`は設定しない。ローカルの`storage.py`はAzure CLIのログインを使うため、UAIのClient IDを指定すると接続経路が変わる。
 
 ```bash

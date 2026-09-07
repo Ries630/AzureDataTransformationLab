@@ -42,6 +42,8 @@ uv run --locked functions/validator/function_app.py sample .artifacts/orders-pra
 
 ## 3. HTTPの入口を確認する
 
+この実CSVを使う確認は、[学習計画](../learning-plan.md#2-ローカルで実行する)に沿ってStorageとサンプルを復元した後に行います。復元前でも、前節のCSV演習とテストは実行できます。
+
 ローカルサーバーの前に、Azuriteと設定を準備します。コピーした設定の`LAB_STORAGE_ACCOUNT_NAME`を学習用Storage名へ変更し、ローカルでは`AZURE_CLIENT_ID`を設定しません。`storage.py`はこの環境ではAzure CLIのログインを使い、UAIへ切り替えないためです。
 
 ```bash
