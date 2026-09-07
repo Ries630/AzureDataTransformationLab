@@ -269,7 +269,7 @@ terraform -chdir=infra/ci-plan plan -input=false -out=detach-lab.tfplan
 terraform -chdir=infra/ci-plan show -no-color detach-lab.tfplan
 ```
 
-操作が`lab_reader`と`lab_blob_reader`の2件の削除だけであることを確認する。CI Identity・OIDC・Subscription名前確認権限・stateの読み取りとlease権限は保持する。これらにも変更が出る場合は停止する。CI未構築の場合だけ、この切り離しは不要である。
+削除対象が学習用リソースの読み取り権限と、そのための専用ロール定義だけであることを確認する。対象の正は[CIの権限構成](terraform-plan-review.md)と参照先のTerraformに置く。CI Identity・OIDC・Subscription名前確認権限・stateの読み取りとlease権限は保持する。これらにも変更が出る場合は停止する。CI未構築の場合だけ、この切り離しは不要である。
 
 #### 学習用rootの破棄plan
 
@@ -317,7 +317,7 @@ terraform -chdir=infra/ci-plan plan -input=false -out=reattach-lab.tfplan
 terraform -chdir=infra/ci-plan show -no-color reattach-lab.tfplan
 ```
 
-解除未適用なら変更なし、解除済みなら`lab_reader`と`lab_blob_reader`のうち失われた読み取り権限だけが作成対象であることを確認する。Identity・OIDC・stateへの権限などにも変更が出た場合は停止する。権限の再作成が必要な場合は、この復旧planを提示して別途承認を受け、適用直前にcode・入力・state・対象を再照合してから`terraform -chdir=infra/ci-plan apply reattach-lab.tfplan`を実行する。CI用rootの再planが差分なしであることを確認する。
+解除未適用なら変更なし、解除済みなら[CIの権限構成](terraform-plan-review.md)のうち失われた学習用の権限と専用ロール定義だけが作成対象であることを確認する。Identity・OIDC・stateへの権限などにも変更が出た場合は停止する。権限の再作成が必要な場合は、この復旧planを提示して別途承認を受け、適用直前にcode・入力・state・対象を再照合してから`terraform -chdir=infra/ci-plan apply reattach-lab.tfplan`を実行する。CI用rootの再planが差分なしであることを確認する。
 
 学習用rootの通常planで実環境stateを参照できることを確認し、差分があれば理由を確認する（復旧のために自動適用しない）。[PRでの動作と確認](terraform-plan-review.md#prでの動作と確認)に従ってCI入力・権限・Environment設定を照合し、今回休止したworkflowの再開承認を得てから実行する。
 
@@ -330,35 +330,156 @@ gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan
 
 #### 再構築とCI再開は別作業
 
-現在の`backend.mjs init`は管理対象0件のstateを拒否する。破棄後の失敗を回避するために、stateを削除したり空state拒否を緩めたりしない。再構築時は保持した空stateを正として使う手順を別途確認・承認し、学習用リソースとCIの読み取り権限を復旧する。その後に入力・権限・通常planを確認してからPR planの再開を承認する。本節の削除承認には、再構築とworkflowの再開を含めない。
+現在の`backend.mjs init`は管理対象0件のstateを拒否する。破棄後の再構築では、削除を承認した時点で保持した空stateのベースラインだけを使い、stateを削除したり空state拒否を緩めたりしない。ベースラインは任意の空stateを新規作成して代用せず、承認済みの後片付けで作成された`$LAB_EMPTY_STATE_BASELINE`を指定する。
+
+再構築の準備は次のように行う。`prepare-rebuild`は保存先、保護設定、初期化済みbackend、ベースラインのSubscriptionとstate属性を照合するだけで、Azureへのstate転送やリソース変更を行わない。
+
+```bash
+node scripts/terraform/backend.mjs prepare-rebuild infra/terraform "$LAB_EMPTY_STATE_BASELINE"
+terraform -chdir=infra/terraform plan -var=functions_enabled=false -out=rebuild.tfplan
+terraform -chdir=infra/terraform show -no-color rebuild.tfplan
+```
+
+このplanで学習用Storageの再作成内容と費用を確認し、明示的な承認後にだけ`rebuild.tfplan`を適用する。適用後にサンプルCSVと4つのFilesystemを復元し、通常のplanで差分を確認する。`functions_enabled=true`を指定した事前のpreflight planは、ベースラインとFunction追加分を同時に表示する参照用であり、Storage復元後の適用には使わず、復元後のstateからFunction用planを作り直す。
+
+Function用planでは、秘密の`phase2.auto.tfvars`へ`functions_enabled=true`を保存してから入力・権限・対象を照合する。CIの読み取り権限復旧とPR planのworkflow再開は、Function基盤の再構築とは別の承認作業として扱う。
 
 ## Phase 2: Azure Functionsによる入力検証
 
-Python Functionを実装し、検証ロジックをAzure Functions固有コードから分離してテストする。
+Python Functionを実装し、検証ロジックをAzure Functions固有コードから分離してテストする。HTTP契約とCSV検証規則の正は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)に置く。読み方と演習は[Phase 2の解説](tutorials/phase-2-validation.md)を参照する。Azure適用、実動作確認、CI接続の復旧は、それぞれのplanを確認して別途承認を得た後に行う。
+
+### 1. ローカルの公開境界を確認する
+
+次の3つの責務を分けて実装する。
+
+| ファイル | 学習する責務 |
+|---|---|
+| `functions/validator/validation.py` | Azure SDKを使わずにCSVのバイト列を判定する |
+| `functions/validator/storage.py` | Managed Identityで`landing`のBlobを読み取り、ETagを照合する |
+| `functions/validator/function_app.py` | HTTP入力、検証処理、StorageエラーのHTTP応答を接続する |
+
+まず`validation.py`の公開関数をローカルから呼び出し、正常なサンプルと不正なサンプルの判定・エラー位置・エラー件数を確認する。HTTP 200で返る`INVALID`と、読み取り失敗などの5xxを別の状態として扱うことが、このPhaseの重要な学習点である。
+
+### 2. ローカルで実行する
+
+リポジトリルートで次を実行する。
+
+```bash
+uv run --locked functions/validator/function_app.py test
+uv run scripts/validator/test_pure.py
+uv run --locked functions/validator/function_app.py sample samples/valid/orders_v1.csv
+uv run --locked functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
+```
+
+`test_pure.py`はAzure SDKを使わずに公開関数を確認し、`sample`ではVALIDとINVALIDの構造化結果を読む。既存の不正サンプルはコピーしてから1項目ずつ変更し、どのエラーが消え、どのエラーが残るかを記録する。CSVの規則は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)を参照する。
+
+`serve`を起動する前に、Functionsホストの状態保存先としてAzuriteを起動する。ローカル設定を作成して`LAB_STORAGE_ACCOUNT_NAME`を実際の学習用Storage名へ変更し、`AZURE_CLIENT_ID`は設定しない。ローカルの`storage.py`はAzure CLIのログインを使うため、UAIのClient IDを指定すると接続経路が変わる。
+
+```bash
+docker compose -f functions/validator/compose.local.yml up -d
+cp -n functions/validator/local.settings.json.example functions/validator/local.settings.json
+# local.settings.jsonのLAB_STORAGE_ACCOUNT_NAMEを編集する。
+unset AZURE_CLIENT_ID
+az account show --subscription Personal-Sandbox --query '{name:name,state:state,userType:user.type}' -o json
+```
+
+`userType`が`user`であることと対象Subscriptionを確認してから、別のターミナルでFunctionsホストを起動する。
+
+```bash
+uv run --locked functions/validator/function_app.py serve
+```
+
+ローカルHTTPの確認には、Azure CLIログインで取得したETagを使う。Function keyはローカルでは不要である。
+
+```bash
+export LAB_STORAGE_ACCOUNT_NAME="$(jq -r '.Values.LAB_STORAGE_ACCOUNT_NAME' functions/validator/local.settings.json)"
+export LAB_ETAG="$(az storage fs file show --subscription Personal-Sandbox \
+  --account-name "$LAB_STORAGE_ACCOUNT_NAME" \
+  --auth-mode login --file-system landing --path orders_v1.csv --query etag -o tsv)"
+jq -n --arg etag "$LAB_ETAG" \
+  '{filesystem:"landing",path:"orders_v1.csv",etag:$etag}' \
+  | curl --fail-with-body -sS -X POST http://127.0.0.1:7071/api/validate \
+      -H 'Content-Type: application/json' --data-binary @-
+```
+
+### 3. 依存関係をロックする
 
 依存関係の正は`function_app.py`のPEP 723インラインメタデータと、隣接するロックファイルに置く。
 
-Azure FunctionsはPEP 723を直接解釈しないため、Linux環境でuvを使って`.python_packages/lib/site-packages`へ依存関係を配置し、`--no-build`で発行する。
-
 ```bash
 uv lock --script functions/validator/function_app.py
-
-uv export \
-  --script functions/validator/function_app.py \
-  --format requirements.txt \
-| uv pip install \
-    --requirements - \
-    --target functions/validator/.python_packages/lib/site-packages
-
-cd functions/validator
-func azure functionapp publish "$FUNCTION_APP_NAME" --no-build
+uv run --locked functions/validator/function_app.py test
 ```
 
-`requirements.txt`ファイルと`pyproject.toml`は作成しない。
+`uv lock --script`で作成されるロックファイルをレビューし、`--locked`付きの実行でロックが変更されないことを確認する。`requirements.txt`と`pyproject.toml`は作成しない。
 
-この方式を実装する時点で再現性とAzure Functions上での動作を検証し、長期採用する場合はADRへ記録する。
+### 4. Azure Functions用の依存関係を生成する
 
-完了条件は、正常なCSVをVALID、不正なCSVをINVALIDと判定し、構造化した結果を返せることである。
+Azure FunctionsのホストはPEP 723を依存関係のインストール手順として解釈しないため、Linux x86_64・Python 3.14環境で、ロックされた依存関係を`.python_packages/lib/site-packages`へ配置する。生成処理は`scripts/validator/package.py`へ集約し、ハッシュ検証とwheel限定でインストールする。
+
+配置先はリポジトリ内の`.artifacts/`配下に作り、実行のたびに新しい名前を指定する。Macでは固定Linux x86_64コンテナーを使い、Linux x86_64では`--docker`を省略する。
+
+```bash
+# Mac
+uv run scripts/validator/package.py --docker .artifacts/validator-build-1
+
+# Linux x86_64
+uv run scripts/validator/package.py .artifacts/validator-build-1
+```
+
+第1引数の配置先はまだ存在してはいけない。生成後に依存パッケージ、`host.json`、`.funcignore`、`package-manifest.json`を確認する。同じロックで再生成するときは別名（例: `validator-build-2`）を使い、manifestの依存名・バージョンとlock SHA256を比較する。ZIPのバイト列一致までは保証しない。Mac上で直接依存パッケージを生成せず、CIでも同じLinux生成処理を使う。
+
+### 5. Azureの基盤をplanで確認する
+
+学習用StorageはIssue #22の後片付けで削除済みである。保持している空のremote stateを使った再構築は、通常の`backend.mjs init`が管理対象0件のstateを拒否する前提を維持し、別のplan・適用承認として扱う。空state拒否を緩めたりstateを削除したりしない。
+
+再構築後に、Function用のTerraform planを作成する。対象と実行時設定は[アーキテクチャ](architecture.md#storageと実行環境)、判断理由は[ADR-0004](adr/0004-separate-function-host-storage.md)を参照する。Azure CLIで対象リージョンのランタイム提供状況と必要なResource Providerの登録状態を確認し、登録が必要なら対象を提示して承認後に登録する。
+
+```bash
+# phase2.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
+(
+set -eu
+umask 077
+set -o noclobber
+printf '%s\n' 'functions_enabled = true' > infra/terraform/phase2.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase2.tfplan
+terraform -chdir=infra/terraform show -no-color phase2.tfplan
+)
+```
+
+上のブロックは入力ファイルを新規作成する初回用であり、既存ファイルがあればplanを実行せず終了する。既存ファイルを確認・編集した場合は、planとshowの2行だけを実行する。planでは対象Subscription、Resource Group、Storage Account、ロール割り当て、アプリ設定、費用見積もり、後片付け方法を照合する。Azureリソースの作成・変更には、このplanを提示したうえで明示的な承認を得る。
+
+### 6. 発行して動作を確認する
+
+基盤の適用が承認された後、生成処理が作った配置先をFunctionプロジェクトとして`--no-build`で発行する。配置先には`function_app.py`、`validation.py`、`storage.py`、`host.json`、`.funcignore`、`.python_packages`が含まれる。
+
+```bash
+(
+set -eu
+test "$(az account show --subscription "${ARM_SUBSCRIPTION_ID:?}" --query name -o tsv)" = Personal-Sandbox
+FUNCTION_APP_NAME="$(terraform -chdir=infra/terraform output -raw function_app_name)"
+LAB_FUNCTION_RG="$(terraform -chdir=infra/terraform output -raw resource_group_name)"
+az functionapp show --subscription "$ARM_SUBSCRIPTION_ID" \
+  --resource-group "$LAB_FUNCTION_RG" --name "$FUNCTION_APP_NAME" \
+  --query '{name:name,resourceGroup:resourceGroup}' -o json
+cd .artifacts/validator-build-1
+func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRIPTION_ID" --no-build
+)
+```
+
+Function keyを付けて、正常・不正サンプルとETag不一致、取得障害を呼び出し、[HTTP契約](architecture.md#http契約)どおりの結果を確認する。Functionが入力CSVをコピー・更新していないことをStorage側で照合する。
+
+ローカルとAzureで同じ入力を使い、判定結果とエラー位置が一致することを記録する。発行後のTerraform planに意図しない差分がないこと、同じロックからLinuxパッケージを再生成できることを確認する。
+
+### Phase 2の完了条件
+
+- ローカルテストが成功し、正常なCSVと不正なCSVの構造化結果を説明できる。
+- `validation.py`をAzure SDKなしでテストでき、`function_app.py`と`storage.py`の責務を説明できる。
+- PEP 723のメタデータと隣接ロックから、Ubuntu 24.04でAzure Functions用パッケージを生成できる。
+- 承認されたTerraform planどおりに基盤を構築し、Function key付きのHTTP呼び出しでローカルと同じ結果を確認できる。
+- 業務Reject（HTTP 200・`INVALID`）とシステム障害（HTTP 5xx）を区別できる。
+
+ADF Pipeline、`validated`・`rejected`へのコピー、Mapping Data Flow、監視通知はPhase 3以降で扱う。
 
 ## Phase 3: Data Factory Pipeline
 

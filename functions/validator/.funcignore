@@ -1,0 +1,7 @@
+local.settings.json
+.venv/
+__pycache__/
+*.pyc
+*.lock
+local.settings.json.example
+compose.local.yml
