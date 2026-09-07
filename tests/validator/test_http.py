@@ -71,7 +71,15 @@ class HttpContractTests(unittest.TestCase):
                 response = HANDLER(func.HttpRequest(method="POST", url="/api/validate", body=body))
                 self.assertEqual(400, response.status_code)
 
-    @patch.dict(os.environ, {"LAB_STORAGE_ACCOUNT_NAME": "testaccount"}, clear=True)
+    @patch.dict(
+        os.environ,
+        {
+            "LAB_STORAGE_ACCOUNT_NAME": "testaccount",
+            "WEBSITE_HOSTNAME": "localhost:7071",
+            "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
+        },
+        clear=True,
+    )
     @patch("storage.AzureCliCredential")
     @patch("storage.BlobClient")
     def test_sample_csv_results_through_http(
@@ -93,6 +101,7 @@ class HttpContractTests(unittest.TestCase):
                 self.assertEqual(status, result["status"])
                 self.assertEqual(count, result["errorCount"])
         self.assertEqual("landing", client.call_args.kwargs["container_name"])
+        credential.assert_called()
         self.assertEqual(
             "https://testaccount.blob.core.windows.net", client.call_args.kwargs["account_url"]
         )
@@ -174,3 +183,23 @@ class HttpContractTests(unittest.TestCase):
     def test_missing_configuration_is_system_error(self) -> None:
         """アプリ設定不足はINVALIDではなく500とする。"""
         self.assertEqual(500, HANDLER(valid_request()).status_code)
+
+    @patch.dict(
+        os.environ,
+        {
+            "LAB_STORAGE_ACCOUNT_NAME": "testaccount",
+            "WEBSITE_HOSTNAME": "test.azurewebsites.net",
+            "AZURE_FUNCTIONS_ENVIRONMENT": "Production",
+        },
+        clear=True,
+    )
+    @patch("storage.AzureCliCredential")
+    def test_azure_without_identity_does_not_use_cli(self, credential: MagicMock) -> None:
+        """AzureでIdentity指定が欠けても開発用の認証へ切り替えない。"""
+        for environment in ("Production", "Development"):
+            with (
+                self.subTest(environment=environment),
+                patch.dict(os.environ, {"AZURE_FUNCTIONS_ENVIRONMENT": environment}),
+            ):
+                self.assertEqual(500, HANDLER(valid_request()).status_code)
+                credential.assert_not_called()

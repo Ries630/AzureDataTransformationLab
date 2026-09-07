@@ -2,6 +2,7 @@
 
 import os
 import re
+from urllib.parse import urlsplit
 
 from azure.core import MatchConditions
 from azure.core.exceptions import HttpResponseError, ServiceRequestError, ServiceResponseError
@@ -28,7 +29,12 @@ def read_csv(path: str, etag: str) -> bytes:
     if not re.fullmatch(r"[a-z0-9]{3,24}", account):
         raise RuntimeError("学習用Storage Account名が設定されていません。")
     client_id = os.environ.get("AZURE_CLIENT_ID")
-    if os.environ.get("WEBSITE_HOSTNAME") and not client_id:
+    # Core ToolsもWEBSITE_HOSTNAMEを設定するため、明示されたローカル開発環境を区別する。
+    hostname = os.environ.get("WEBSITE_HOSTNAME", "")
+    local_development = os.environ.get("AZURE_FUNCTIONS_ENVIRONMENT") == "Development" and urlsplit(
+        f"//{hostname}"
+    ).hostname in {"localhost", "127.0.0.1", "::1"}
+    if hostname and not local_development and not client_id:
         raise RuntimeError("FunctionのManaged Identityが設定されていません。")
     credential = (
         ManagedIdentityCredential(client_id=client_id) if client_id else AzureCliCredential()
