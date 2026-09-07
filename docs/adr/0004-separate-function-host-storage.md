@@ -1,7 +1,7 @@
 # ADR-0004: Azure FunctionsのホストStorageと入力Storageを分離する
 
 - ステータス: 承認済み
-- Azure検証: CLIで対象環境のFlex Consumptionの利用可能性を確認し、Storage再構築用plan（7件）とFunctionを含む事前plan（15件）を確認済み。Azure適用・実機検証と再構築後の再planは未実施
+- Azure検証: 承認済みのStorage再構築（7件）とサンプル配置を完了。再構築後のstateからFunction追加plan（8件作成、変更・削除なし）を確認済み。Function基盤の適用とManaged Identityによる実機検証は未実施
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)
 
