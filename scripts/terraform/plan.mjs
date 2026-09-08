@@ -26,7 +26,8 @@ export function runPlan({ root = 'infra/terraform', output, event, env = process
   if (!isTrustedPull(event, env)) throw new Error('信頼できるPRではありません。');
   const inputs = JSON.parse(env.TERRAFORM_INPUTS);
   const backend = JSON.parse(env.TERRAFORM_BACKEND_CONFIG);
-  const allowed = ['subscription_id', 'operator_object_id', 'resource_group_name', 'storage_account_name', 'location', 'tags'];
+  const allowed = ['subscription_id', 'operator_object_id', 'resource_group_name', 'storage_account_name', 'location', 'tags',
+    'functions_enabled', 'function_app_name', 'function_plan_name', 'function_storage_account_name', 'function_identity_name'];
   if (!uuid.test(env.ARM_SUBSCRIPTION_ID ?? '') || inputs.subscription_id !== env.ARM_SUBSCRIPTION_ID ||
       backend.subscription_id !== env.ARM_SUBSCRIPTION_ID || !uuid.test(inputs.operator_object_id ?? '') ||
       typeof inputs.resource_group_name !== 'string' || typeof inputs.storage_account_name !== 'string' ||

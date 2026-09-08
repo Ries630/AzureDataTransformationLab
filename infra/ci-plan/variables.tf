@@ -40,6 +40,28 @@ variable "lab_storage_account_name" {
   nullable    = false
 }
 
+variable "functions_access_enabled" {
+  description = "既存のFunction AppをCI planのrefresh対象にする。"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "function_app_name" {
+  description = "既存のFlex Consumption Function App名。省略時はlab_storage_account_nameから導出する。"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.function_app_name == null || (
+      length(var.function_app_name) >= 2 && length(var.function_app_name) <= 32 &&
+      can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", var.function_app_name))
+    )
+    error_message = "function_app_nameは英小文字・数字・ハイフンで2〜32文字、先頭と末尾は英小文字または数字で指定してください。"
+  }
+}
+
 variable "oidc_subject_prefix" {
   description = "GitHub OIDC APIが返した対象リポジトリのsub_claim_prefix。"
   type        = string

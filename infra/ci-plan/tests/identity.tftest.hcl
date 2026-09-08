@@ -25,6 +25,7 @@ variables {
   lab_access_enabled         = true
   lab_resource_group_name    = "rg-example-lab"
   lab_storage_account_name   = "exampleuniquelab"
+  functions_access_enabled   = false
   oidc_subject_prefix        = "repo:Ries630@82589136/AzureDataTransformationLab@1350311992"
 }
 
@@ -59,6 +60,55 @@ run "restrict_identity_and_roles" {
     condition     = length(data.azurerm_resource_group.lab) == 1 && length(azurerm_role_assignment.lab_reader) == 1 && length(azurerm_role_assignment.lab_blob_reader) == 1 && azurerm_role_assignment.lab_reader[0].scope == data.azurerm_resource_group.lab[0].id && azurerm_role_assignment.lab_reader[0].role_definition_name == "Reader" && azurerm_role_assignment.lab_blob_reader[0].scope == local.lab_account
     error_message = "既定の接続有効時は学習用RGとStorageだけに従来の読み取り権限を付与する必要があります。"
   }
+  assert {
+    condition     = length(azurerm_role_definition.function_app_config_list_reader) == 0 && length(azurerm_role_assignment.function_app_config_list_reader) == 0
+    error_message = "Functions接続を明示的に有効化していない場合は、追加のrefresh権限を作成してはいけません。"
+  }
+}
+
+run "enable_functions_refresh_with_derived_names" {
+  command = plan
+  variables {
+    functions_access_enabled = true
+  }
+  override_data {
+    target = data.azurerm_subscription.current
+    values = { display_name = "Personal-Sandbox" }
+  }
+  assert {
+    condition = (
+      length(azurerm_role_definition.function_app_config_list_reader) == 1 &&
+      azurerm_role_definition.function_app_config_list_reader[0].scope == data.azurerm_resource_group.lab[0].id &&
+      toset(one(azurerm_role_definition.function_app_config_list_reader[0].permissions).actions) == toset(["Microsoft.Web/sites/config/list/action"]) &&
+      toset(azurerm_role_definition.function_app_config_list_reader[0].assignable_scopes) == toset([data.azurerm_resource_group.lab[0].id])
+    )
+    error_message = "Function Appの構成listだけを許可するcustom roleをlab RGで管理する必要があります。"
+  }
+  assert {
+    condition = (
+      length(azurerm_role_assignment.function_app_config_list_reader) == 1 &&
+      azurerm_role_assignment.function_app_config_list_reader[0].scope == "${data.azurerm_resource_group.lab[0].id}/providers/Microsoft.Web/sites/func-exampleuniquelab"
+    )
+    error_message = "追加権限のassignmentはFunction App単体だけをscopeにする必要があります。"
+  }
+}
+
+run "enable_functions_refresh_with_explicit_names" {
+  command = plan
+  variables {
+    functions_access_enabled = true
+    function_app_name        = "func-ci-explicit"
+  }
+  override_data {
+    target = data.azurerm_subscription.current
+    values = { display_name = "Personal-Sandbox" }
+  }
+  assert {
+    condition = (
+      azurerm_role_assignment.function_app_config_list_reader[0].scope == "${data.azurerm_resource_group.lab[0].id}/providers/Microsoft.Web/sites/func-ci-explicit"
+    )
+    error_message = "Function Appの明示名をassignment scopeへ反映する必要があります。"
+  }
 }
 
 run "reject_personal_data_when_detached" {
@@ -76,7 +126,8 @@ run "reject_personal_data_when_detached" {
 run "detach_lab_without_reading_its_resource_group" {
   command = plan
   variables {
-    lab_access_enabled = false
+    lab_access_enabled       = false
+    functions_access_enabled = true
   }
   override_data {
     target = data.azurerm_subscription.current
@@ -85,6 +136,10 @@ run "detach_lab_without_reading_its_resource_group" {
   assert {
     condition     = length(data.azurerm_resource_group.lab) == 0 && length(azurerm_role_assignment.lab_reader) == 0 && length(azurerm_role_assignment.lab_blob_reader) == 0
     error_message = "接続無効時は学習用RGを参照せず、学習用の読み取り権限だけを外す必要があります。"
+  }
+  assert {
+    condition     = length(azurerm_role_definition.function_app_config_list_reader) == 0 && length(azurerm_role_assignment.function_app_config_list_reader) == 0
+    error_message = "lab_access_enabled=falseではFunctions用のassignmentも作成してはいけません。"
   }
   assert {
     condition     = azurerm_user_assigned_identity.plan.name == "id-adtl-terraform-plan" && azurerm_federated_identity_credential.github.subject == "${var.oidc_subject_prefix}:environment:terraform-plan"

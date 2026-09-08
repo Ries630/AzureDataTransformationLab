@@ -24,7 +24,7 @@ function fixture(t) {
     GITHUB_ACTOR: 'Ries630', EXPECTED_HEAD_SHA: sha, ARM_SUBSCRIPTION_ID: subscription,
     TERRAFORM_BACKEND_CONFIG: JSON.stringify({ subscription_id: subscription }),
     TERRAFORM_INPUTS: JSON.stringify({ subscription_id: subscription, resource_group_name: 'rg-test',
-      storage_account_name: 'exampletest', operator_object_id: subscription }),
+      storage_account_name: 'exampletest', operator_object_id: subscription, functions_enabled: false }),
   };
   return { root, output: join(directory, 'plan.md'), event: structuredClone(event), env, calls,
     initialize: () => calls.push('init'),
@@ -57,6 +57,26 @@ test('Subscriptionまたは操作ユーザーの指定が不正ならinit前に�
     assert.throws(() => runPlan(f));
     assert.deepEqual(f.calls, []);
   }
+});
+
+test('Functions用の入力を許可し、未許可の入力はTerraform実行前に拒否する', (t) => {
+  const f = fixture(t);
+  const input = JSON.parse(f.env.TERRAFORM_INPUTS);
+  input.functions_enabled = true;
+  input.function_app_name = 'func-exampletest';
+  input.function_plan_name = 'plan-exampletest';
+  input.function_storage_account_name = 'fnexampletest';
+  input.function_identity_name = 'id-exampletest-fn';
+  f.env.TERRAFORM_INPUTS = JSON.stringify(input);
+  runPlan(f);
+  assert.equal(f.calls[0], 'init');
+
+  const rejected = fixture(t);
+  const rejectedInput = JSON.parse(rejected.env.TERRAFORM_INPUTS);
+  rejectedInput.function_access_key = 'must-not-be-accepted';
+  rejected.env.TERRAFORM_INPUTS = JSON.stringify(rejectedInput);
+  assert.throws(() => runPlan(rejected));
+  assert.deepEqual(rejected.calls, []);
 });
 
 test('既存state初期化からvalidate・saved plan・showを順に実行し公開用Markdownだけを残す', (t) => {

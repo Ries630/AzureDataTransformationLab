@@ -3,4 +3,7 @@ state_storage_account_name = "exampleuniquestate"
 lab_access_enabled         = true
 lab_resource_group_name    = "rg-example-lab"
 lab_storage_account_name   = "exampleuniquelab"
+functions_access_enabled   = false
+# functions_access_enabled = true の場合、既定値は次の名前から導出される。
+# function_app_name               = "func-exampleuniquelab"
 oidc_subject_prefix        = "repo:Ries630@82589136/AzureDataTransformationLab@1350311992"

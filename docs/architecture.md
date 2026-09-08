@@ -74,30 +74,48 @@ Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは�
 
 ## Azure Functionsの責務
 
-Azure Functionsは重いETLを実行せず、軽量な入力検証を担当する。
+Azure Functionsは重いETLを実行せず、`landing`にある小さなCSVの入力検証を担当する。検証結果を返すだけで、入力CSVのコピーや書き込みは行わない。
 
-検証対象は次を基本とする。
+### コードの責務
 
-- ファイル名と拡張子
-- CSVとして読み込めること
-- 必須カラム
-- 基本的な型
-- nullの許可条件
-- 値の範囲
-- 許可コード
-- ヘッダー
+検証処理はAzure Functions固有の処理から分離する。
 
-Pipelineからはストレージ上の入力を特定できる情報を渡す。
+| ファイル | 責務 |
+|---|---|
+| `functions/validator/validation.py` | Azure SDKに依存せず、CSVのバイト列とファイル名を検証する |
+| `functions/validator/storage.py` | Managed IdentityでBlobを読み取り、ETagを照合する |
+| `functions/validator/function_app.py` | HTTPリクエストを検証し、Storage・純粋な検証処理・HTTP応答を接続する |
 
-```json
-{
-  "filesystem": "landing",
-  "path": "orders_20260827.csv",
-  "etag": "input-object-etag"
-}
+純粋な検証処理の公開境界は次の形とする。
+
+```python
+validate_csv(content: bytes, filename: str) -> dict
 ```
 
-Functionは構造化した判定結果を返す。
+`validation.py`はAzureへの通信を行わないため、同じ入力に対してローカルテストとAzure上のFunctionで同じ判定を確認できる。
+
+### CSV検証規則
+
+次の規則をPhase 2の正とする。
+
+| 対象 | 規則 |
+|---|---|
+| ファイル名 | 拡張子が`.csv`であること |
+| エンコーディング | UTF-8。UTF-8 BOMは許容し、その他の不正なバイト列は拒否する |
+| CSV構文 | CSVとして解析でき、各データ行の列数がヘッダーと一致すること |
+| ヘッダー | `order_id`、`customer_id`、`amount`、`currency`、`ordered_at`を必須とする。順序は問わず、重複名は拒否する。追加列は許容する |
+| データ行 | ヘッダーを除くデータ行を1,000行までとする。空ファイル、ヘッダーだけのファイル、上限超過は拒否する |
+| ファイルサイズ | UTF-8デコード前の入力バイト数を1 MiBまでとする |
+| `order_id`、`customer_id` | 空欄および空白だけの値を拒否する文字列 |
+| `amount` | 指数表記を含まない通常の十進表記で、有限な`Decimal`かつ0以上であること |
+| `currency` | `JPY`であること |
+| `ordered_at` | ISO 8601日時。日付と時刻の区切りは`T`とし、タイムゾーンは省略可能とする |
+
+ヘッダーに不備がある場合は必須セルの値検証を行わず、ヘッダーエラーとデータ行の列数エラーだけを返す。入力サイズと行数の上限内では、必須セルの検証エラーを省略しない。1つのセルに対してエラーを1件返し、巨大なヘッダーによる構造エラーは空欄列名を1件、同じ重複列名を名前ごと1件に集約する。セルに対応しないファイル・構造エラーでは`row`または`column`を`null`にできる。行番号はヘッダーを1行目、最初のデータ行を2行目として数え、quoted field内の改行は1つの論理レコードとして扱う。
+
+### 検証結果
+
+Functionは次の構造化された結果を返す。`errorCount`は`errors`の要素数と一致させる。
 
 ```json
 {
@@ -105,7 +123,7 @@ Functionは構造化した判定結果を返す。
   "errorCount": 1,
   "errors": [
     {
-      "row": 12,
+      "row": 2,
       "column": "amount",
       "message": "amount must be >= 0"
     }
@@ -113,7 +131,41 @@ Functionは構造化した判定結果を返す。
 }
 ```
 
-大きな入力を扱う要件が判明した場合は、返却するエラー件数を制限し、完全な検証結果を`rejected`へ保存する方式を検討する。
+`status`は`VALID`または`INVALID`とする。`errors[].row`と`errors[].column`は、該当する行または列がない場合に`null`を設定する。入力内容の不備は、すべて検証結果として返す。
+
+### HTTP契約
+
+エンドポイントは`POST /api/validate`とする。Azure上ではFunction keyを要求する。
+
+```json
+{
+  "filesystem": "landing",
+  "path": "orders_v1.csv",
+  "etag": "\"0x8DB000000000000\""
+}
+```
+
+リクエストは8 KiB以下のJSONオブジェクトで、キーを`filesystem`、`path`、`etag`の3つに限定する。`filesystem`は`landing`に固定する。`path`は1〜1,024文字の相対パスで、各要素を空、`.`、`..`にできず、先頭の`/`、バックスラッシュ、制御文字、URLに使われる`:`、`?`、`#`、`%`を許可しない。`etag`は必須で、Blobから取得した引用符付きETagと完全一致させる。アカウント名はリクエストから受け取らず、アプリ設定`LAB_STORAGE_ACCOUNT_NAME`で固定する。
+
+認証後のHTTP応答は次のとおりとする。
+
+| 条件 | HTTP | `code`または本文 | 内容 |
+|---|---:|---|---|
+| CSVが規則を満たす | 200 | `status: VALID`の検証結果 | 入力を受け入れる |
+| CSVが規則を満たさない | 200 | `status: INVALID`の検証結果 | 業務Rejectとして扱う |
+| JSON、`filesystem`、`path`、`etag`などリクエストが不正 | 400 | `INVALID_REQUEST` | リクエストエラー |
+| 指定ETagと現在のBlobのETagが一致しない | 409 | `INPUT_CHANGED` | 入力が更新されたため検証を中止 |
+| Blobの読み取り、アクセス、その他のStorage操作に失敗 | 502 | `STORAGE_READ_FAILED` | システム障害 |
+| Storage読み取りがタイムアウトした | 504 | `STORAGE_TIMEOUT` | システム障害 |
+| 予期しない例外 | 500 | `INTERNAL_ERROR` | システム障害 |
+
+HTTP 200の`INVALID`は入力データを業務上受け入れられない状態であり、Pipelineで`rejected`へ進められる。HTTP 5xxは検証を完了できなかったシステム障害であり、Pipelineを失敗させて監視対象にする。
+
+### Storageと実行環境
+
+`storage.py`は`LAB_STORAGE_ACCOUNT_NAME`の`landing`だけを読み取る。Azure上ではFunctionがSDKで使用するUser Assigned Managed Identityを`AZURE_CLIENT_ID`で指定し、ローカルではAzure CLIのログインを使う。ETagを条件に読み取ることで、リクエストを受けた後に内容が変わったBlobを検証しない。
+
+FunctionはLinuxのFlex Consumption、Azure Functionsランタイムv4、Python 3.14を対象とする。インスタンスメモリは2048 MB、最大インスタンス数は40、HTTPトリガーのインスタンスあたり同時実行数は1、Always Readyは0とする。最大インスタンス数はスケール上限であり、40台を常時起動する設定ではない。Function専用のホスト・デプロイStorageを入力Storageから分離し、Identityベースの接続を使う。Storage構成の判断理由と未検証事項は[ADR-0004](adr/0004-separate-function-host-storage.md)、最大インスタンス数の判断と未検証事項は[ADR-0007](adr/0007-set-flex-max-instance-count.md)を参照する。
 
 ## Mapping Data Flowの責務
 

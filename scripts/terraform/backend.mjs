@@ -98,6 +98,30 @@ function fingerprint(state, subscription) {
   return { sha256: createHash('sha256').update(serialized).digest('hex'), managedResources };
 }
 
+/** 管理対象を持たない保持stateを、再構築準備用に検証する。 */
+function fingerprintEmpty(state, subscription) {
+  const resources = Array.isArray(state?.resources) ? state.resources : null;
+  const managedResources = resources?.reduce((count, resource) => {
+    if (resource?.mode !== 'managed') return count;
+    if (!Array.isArray(resource.instances)) return Number.NaN;
+    return count + resource.instances.length;
+  }, 0);
+  const outputsEmpty = state?.outputs && typeof state.outputs === 'object' &&
+    !Array.isArray(state.outputs) && Object.keys(state.outputs).length === 0;
+  if (state?.version !== 4 || !uuid.test(state.lineage ?? '') ||
+      !Number.isInteger(state.serial) || state.serial < 0 || managedResources !== 0 || !outputsEmpty) {
+    throw new Error('有効な空stateが必要です。');
+  }
+  checkSubscriptionAttributes(state, subscription);
+  const serialized = JSON.stringify(canonical({
+    lineage: state.lineage, serial: state.serial, resources: state.resources, outputs: state.outputs,
+  }));
+  for (const match of serialized.matchAll(/\/subscriptions\/([0-9a-f-]{36})/gi)) {
+    if (match[1].toLowerCase() !== subscription.toLowerCase()) throw new Error('stateに対象外Subscriptionがあります。');
+  }
+  return { sha256: createHash('sha256').update(serialized).digest('hex'), managedResources: 0 };
+}
+
 /** Resource ID以外のSubscription属性にも別環境が紛れていないか確認する。 */
 function checkSubscriptionAttributes(value, subscription) {
   if (!value || typeof value !== 'object') return;
@@ -125,10 +149,22 @@ function checkCache(root, config, type, tenantId) {
 }
 
 /** 移行準備・既存remote stateの初期化・移行後照合を実行する。Azureへのstate転送は行わない。 */
-export function runBackend(command, { root, env = process.env, run = execute } = {}) {
-  if (!['init', 'prepare-migration', 'verify-migration'].includes(command)) throw new Error('操作を指定してください。');
+export function runBackend(command, { root, env = process.env, run = execute, baselinePath } = {}) {
+  if (!['init', 'prepare-migration', 'prepare-rebuild', 'verify-migration'].includes(command)) throw new Error('操作を指定してください。');
   root = resolve(root ?? 'infra/terraform');
   const config = readConfig(root, env);
+  let baselineSource;
+  let rebuildBaseline;
+  if (command === 'prepare-rebuild') {
+    if (typeof baselinePath !== 'string' || !baselinePath) throw new Error('保持stateのパスが必要です。');
+    try {
+      baselineSource = readFileSync(resolve(baselinePath));
+      rebuildBaseline = fingerprintEmpty(JSON.parse(baselineSource.toString('utf8')), config.subscription_id);
+    } catch (error) {
+      if (error instanceof SyntaxError || error?.code === 'ENOENT') throw new Error('保持stateを読み取れません。');
+      throw error;
+    }
+  }
   const { exists, tenantId } = checkDestination(config, run, env);
   const backendPath = join(root, 'remote.backend.hcl');
   const backendText = Object.entries(config).map(([key, value]) => `${key} = ${JSON.stringify(value)}`).join('\n') + '\n';
@@ -149,6 +185,27 @@ export function runBackend(command, { root, env = process.env, run = execute } =
     writeFileSync(backendPath, backendText, { mode: 0o600 });
     chmodSync(backendPath, 0o600);
     return { backupDirectory, managedResources: baseline.managedResources };
+  }
+
+  if (command === 'prepare-rebuild') {
+    if (!exists) throw new Error('再構築対象のremote stateが存在しません。');
+    writeFileSync(backendPath, backendText, { mode: 0o600 });
+    chmodSync(backendPath, 0o600);
+    run('terraform', [`-chdir=${root}`, 'init', '-input=false', '-reconfigure', '-lockfile=readonly', `-backend-config=${backendPath}`]);
+    checkCache(root, config, 'azurerm', tenantId);
+    const remoteState = JSON.parse(run('terraform', [`-chdir=${root}`, 'state', 'pull']));
+    const remote = fingerprintEmpty(remoteState, config.subscription_id);
+    if (remote.sha256 !== rebuildBaseline.sha256) throw new Error('保持stateとremote stateが一致しません。');
+
+    const backupRoot = join(root, '.state-backups');
+    mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
+    chmodSync(backupRoot, 0o700);
+    const backupDirectory = mkdtempSync(join(backupRoot, 'rebuild-'));
+    chmodSync(backupDirectory, 0o700);
+    const backupPath = join(backupDirectory, 'terraform.tfstate');
+    writeFileSync(backupPath, baselineSource, { mode: 0o600, flag: 'wx' });
+    chmodSync(backupPath, 0o600);
+    return { preparedForRebuild: true, managedResources: 0, backupDirectory };
   }
 
   if (!exists) throw new Error('remote stateが存在しません。空stateへのフォールバックを拒否しました。');
@@ -181,7 +238,7 @@ function execute(program, args) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    console.log(JSON.stringify(runBackend(process.argv[2], { root: process.argv[3] })));
+    console.log(JSON.stringify(runBackend(process.argv[2], { root: process.argv[3], baselinePath: process.argv[4] })));
   } catch {
     console.error('backend操作を中止しました。設定・対象・state・認証を確認してください。');
     process.exitCode = 1;

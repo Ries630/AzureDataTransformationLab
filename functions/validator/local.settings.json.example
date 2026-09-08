@@ -1,0 +1,8 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "LAB_STORAGE_ACCOUNT_NAME": "<学習用ADLS Storage Account名>"
+  }
+}
