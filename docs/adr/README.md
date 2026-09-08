@@ -20,6 +20,7 @@
 | [0004](0004-separate-function-host-storage.md) | Azure FunctionsのホストStorageと入力Storageを分離する | 承認済み（Azure検証待ち） |
 | [0005](0005-package-functions-with-pep723-and-uv.md) | PEP 723の依存関係をuvでAzure Functions用にパッケージする | 承認済み（Azure検証待ち） |
 | [0006](0006-scoped-function-refresh-permissions.md) | CIのFunctions設定読取権限をApp単体へ限定する | 提案（Azure検証待ち） |
+| [0007](0007-set-flex-max-instance-count.md) | HTTP Functionの最大インスタンス数を40に設定する | 提案（Azure適用・比較検証待ち） |
 
 ## テンプレート
 

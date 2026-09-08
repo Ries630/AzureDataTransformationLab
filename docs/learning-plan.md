@@ -435,7 +435,7 @@ uv run scripts/validator/package.py .artifacts/validator-build-1
 
 学習用StorageはIssue #22の後片付けで削除済みである。保持している空のremote stateを使った再構築は、通常の`backend.mjs init`が管理対象0件のstateを拒否する前提を維持し、別のplan・適用承認として扱う。空state拒否を緩めたりstateを削除したりしない。
 
-再構築後に、Function用のTerraform planを作成する。対象と実行時設定は[アーキテクチャ](architecture.md#storageと実行環境)、判断理由は[ADR-0004](adr/0004-separate-function-host-storage.md)を参照する。Azure CLIで対象リージョンのランタイム提供状況と必要なResource Providerの登録状態を確認し、登録が必要なら対象を提示して承認後に登録する。
+再構築後に、Function用のTerraform planを作成する。対象と実行時設定は[アーキテクチャ](architecture.md#storageと実行環境)、Storage構成の判断理由は[ADR-0004](adr/0004-separate-function-host-storage.md)、スケール上限の判断理由は[ADR-0007](adr/0007-set-flex-max-instance-count.md)を参照する。Azure CLIで対象リージョンのランタイム提供状況と必要なResource Providerの登録状態を確認し、登録が必要なら対象を提示して承認後に登録する。
 
 ```bash
 # phase2.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。

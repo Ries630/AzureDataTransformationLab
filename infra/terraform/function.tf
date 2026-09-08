@@ -121,7 +121,7 @@ resource "azurerm_function_app_flex_consumption" "function" {
   storage_user_assigned_identity_id = azurerm_user_assigned_identity.function[0].id
   runtime_name                      = "python"
   runtime_version                   = "3.14"
-  maximum_instance_count            = 1
+  maximum_instance_count            = 40
   instance_memory_in_mb             = 2048
   http_concurrency                  = 1
   # always_readyブロックを指定せず、常時起動インスタンス数を0にする。

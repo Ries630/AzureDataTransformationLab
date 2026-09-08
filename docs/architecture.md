@@ -165,7 +165,7 @@ HTTP 200の`INVALID`は入力データを業務上受け入れられない状態
 
 `storage.py`は`LAB_STORAGE_ACCOUNT_NAME`の`landing`だけを読み取る。Azure上ではFunctionがSDKで使用するUser Assigned Managed Identityを`AZURE_CLIENT_ID`で指定し、ローカルではAzure CLIのログインを使う。ETagを条件に読み取ることで、リクエストを受けた後に内容が変わったBlobを検証しない。
 
-FunctionはLinuxのFlex Consumption、Azure Functionsランタイムv4、Python 3.14を対象とする。インスタンスメモリは2048 MB、最大インスタンス数は1、HTTPトリガーのインスタンスあたり同時実行数は1、Always Readyは0とする。Function専用のホスト・デプロイStorageを入力Storageから分離し、Identityベースの接続を使う。構成の判断理由と未検証事項は[ADR-0004](adr/0004-separate-function-host-storage.md)を参照する。
+FunctionはLinuxのFlex Consumption、Azure Functionsランタイムv4、Python 3.14を対象とする。インスタンスメモリは2048 MB、最大インスタンス数は40、HTTPトリガーのインスタンスあたり同時実行数は1、Always Readyは0とする。最大インスタンス数はスケール上限であり、40台を常時起動する設定ではない。Function専用のホスト・デプロイStorageを入力Storageから分離し、Identityベースの接続を使う。Storage構成の判断理由と未検証事項は[ADR-0004](adr/0004-separate-function-host-storage.md)、最大インスタンス数の判断と未検証事項は[ADR-0007](adr/0007-set-flex-max-instance-count.md)を参照する。
 
 ## Mapping Data Flowの責務
 

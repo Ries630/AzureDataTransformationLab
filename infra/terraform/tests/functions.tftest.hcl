@@ -102,8 +102,8 @@ run "functions_add_secure_flex_stack" {
   }
 
   assert {
-    condition     = azurerm_function_app_flex_consumption.function[0].instance_memory_in_mb == 2048 && azurerm_function_app_flex_consumption.function[0].maximum_instance_count == 1 && azurerm_function_app_flex_consumption.function[0].http_concurrency == 1 && length(azurerm_function_app_flex_consumption.function[0].always_ready) == 0
-    error_message = "Functionsのメモリ・最大インスタンス・HTTP同時実行数を学習用の上限へ固定し、常時起動を0にしなければなりません。"
+    condition     = azurerm_function_app_flex_consumption.function[0].instance_memory_in_mb == 2048 && azurerm_function_app_flex_consumption.function[0].maximum_instance_count == 40 && azurerm_function_app_flex_consumption.function[0].http_concurrency == 1 && length(azurerm_function_app_flex_consumption.function[0].always_ready) == 0
+    error_message = "Functionsのメモリ・最大インスタンス40・HTTP同時実行数を学習用の上限へ固定し、常時起動を0にしなければなりません。"
   }
 
   assert {
