@@ -1,7 +1,7 @@
 # ADR-0006: CIのFunctions設定読取権限をApp単体へ限定する
 
-- ステータス: 承認済み（CI実検証待ち）
-- Azure検証: 2026-09-08に承認済みのCI権限4件を適用し、適用後planが変更なしであることを確認。CIによる実refreshは再開後に確認する
+- ステータス: 承認済み
+- Azure検証: 2026-09-08に承認済みのCI権限4件を適用し、適用後planが変更なしであることを確認。[CIの実plan](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34191127924)と公開コメントの生成が成功し、公開ログ・artifact・コメントに既知の実環境IDや資格情報パターンがないことを確認
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)、[ADR-0003](0003-use-scoped-oidc-for-pr-plans.md)
 
@@ -27,7 +27,7 @@ host/deployment StorageへのBlob Data Reader追加は、固定したProviderの
 
 App単体に限定しても、CIは秘密を含む設定を取得し得る。Terraformのsensitive指定やレポートのマスキングはAzure APIの認可範囲を狭めない。既存のEnvironmentによる実行コードの承認と、plan・state・ログの公開境界を維持する。
 
-Basic認証を前提とする発行ツールは使用できなくなる。現行Core ToolsのソースでBearer認証を確認しているが、Azure上の発行成功とRBAC反映は初回適用後に検証する。
+Basic認証を前提とする発行ツールは使用できなくなる。Core ToolsのBearer認証によるAzureへの発行成功と、RBAC適用後のCI refresh成功を確認した。
 
 ## 再評価の条件
 
