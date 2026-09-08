@@ -1,7 +1,7 @@
 # ADR-0005: PEP 723の依存関係をuvでAzure Functions用にパッケージする
 
 - ステータス: 承認済み
-- 検証状況: 固定Linux x86_64コンテナーで2回のクリーンビルド、ネイティブ依存のimport、manifestのlock SHA256と実配置依存の一致を確認済み。[PR #26のCI](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34083499804)でもUbuntu 24.04上のテストとLinuxパッケージ生成が成功。Azureへの発行とvalidateの登録は成功したが、キー付きHTTPは503またはタイムアウトとなり実行結果の照合は未完了
+- 検証状況: 固定Linux x86_64コンテナーで2回のクリーンビルド、ネイティブ依存のimport、manifestのlock SHA256と実配置依存の一致を確認済み。[PR #26のCI](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34083499804)でもUbuntu 24.04上のテストとLinuxパッケージ生成が成功。Azureへの発行とvalidateの登録に加え、2026-09-08にcurlとNodeからキー付きHTTPの4ケースを実行し、ローカルとの結果一致を確認。HTTP障害の比較結果は[ADR-0007](0007-set-flex-max-instance-count.md#検証結果2026-09-08)を参照
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)
 
