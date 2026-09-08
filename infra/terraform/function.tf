@@ -122,7 +122,7 @@ resource "azurerm_function_app_flex_consumption" "function" {
   runtime_name                      = "python"
   runtime_version                   = "3.14"
   maximum_instance_count            = 1
-  instance_memory_in_mb             = 512
+  instance_memory_in_mb             = 2048
   http_concurrency                  = 1
   # always_readyブロックを指定せず、常時起動インスタンス数を0にする。
 
