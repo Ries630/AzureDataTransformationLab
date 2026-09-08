@@ -86,7 +86,7 @@ CIのFunctions用権限は、`infra/ci-plan`の`functions_access_enabled`が`tru
 
 1. Function基盤のstateと実リソース、App名、host/deployment Storage名を照合し、Functions用rootのplanが意図した構成だけを示すことを確認する。
 2. AzureへのFunction基盤の作成・復元と、専用Storageのdeployment container作成が完了していることを確認する。RBAC反映待ちを含む適用は、各planを提示して別に承認する。
-3. `infra/ci-plan`で`lab_access_enabled = true`と`functions_access_enabled = true`、実際のFunction App名を指定した権限planを作り、Functions用の2リソースが追加対象であることを確認する。既存lab接続を戻す場合は、旧来のResource Group ReaderとStorage Readerも追加対象になるため、現在の切り離し状態に応じて2件または4件の追加対象を照合する。権限のAzure適用後に再planし、差分がないことを確認する。
+3. `infra/ci-plan`の入力は`terraform.tfvars.json`だけでなく、既存の`*.auto.tfvars`による上書きを含む最終値を確認する。`lab_access_enabled = true`と`functions_access_enabled = true`、実際のFunction App名を指定した権限planを作り、Functions用の2リソースが追加対象であることを確認する。既存lab接続を戻す場合は、旧来のResource Group ReaderとStorage Readerも追加対象になるため、現在の切り離し状態に応じて2件または4件の追加対象を照合する。権限のAzure適用後に再planし、差分がないことを確認する。
 4. `TERRAFORM_INPUTS`、backend、OIDC Environment、CI Identityの権限を照合してからworkflowを再有効化し、承認付きEnvironmentのPR planと公開コメントを確認する。
 
 後片付けでCIのlab接続を解除するときは、`infra/ci-plan`の`lab_access_enabled = false`を保存してplanする。これにより、`functions_access_enabled = true`を保持したまま、現存するFunctions用の2リソースとlab向け旧2リソースが連動して解除される。復旧時は同じ入力の`functions_access_enabled = true`を維持して`lab_access_enabled = true`へ戻し、実リソースと名前を再照合してから権限を再作成する。workflow再開時の`TERRAFORM_INPUTS`にもFunctionsを使う実値を保持し、Storageだけを再構築するplanでは明示的に`functions_enabled = false`を指定する。
