@@ -1,6 +1,7 @@
 # ADR-0006: CIのFunctions設定読取権限をApp単体へ限定する
 
-- ステータス: 提案（Azure権限適用・実検証待ち）
+- ステータス: 承認済み（CI実検証待ち）
+- Azure検証: 2026-09-08に承認済みのCI権限4件を適用し、適用後planが変更なしであることを確認。CIによる実refreshは再開後に確認する
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)、[ADR-0003](0003-use-scoped-oidc-for-pr-plans.md)
 
@@ -14,7 +15,7 @@ Functionの設定を取得する専用custom roleを用意し、割り当て先�
 
 Function側ではSCM Basic認証による発行を無効にし、Core ToolsのBearer認証によるOneDeployを使う。CIが設定取得に伴って発行資格情報を受け取っても、それをBasic認証で使用する発行経路を開かないためである。
 
-Azureへの権限付与と、付与後の実refreshは未実施である。対象を提示して承認後に確認する。
+権限の適用結果とCIでの実refreshの状況は、上記のAzure検証に記録する。
 
 ## 検討した代替
 

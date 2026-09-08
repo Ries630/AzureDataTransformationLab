@@ -19,7 +19,7 @@
 | [0003](0003-use-scoped-oidc-for-pr-plans.md) | PRのplanを専用Identityと承認付きEnvironmentで実行する | 承認済み |
 | [0004](0004-separate-function-host-storage.md) | Azure FunctionsのホストStorageと入力Storageを分離する | 承認済み |
 | [0005](0005-package-functions-with-pep723-and-uv.md) | PEP 723の依存関係をuvでAzure Functions用にパッケージする | 承認済み |
-| [0006](0006-scoped-function-refresh-permissions.md) | CIのFunctions設定読取権限をApp単体へ限定する | 提案（Azure検証待ち） |
+| [0006](0006-scoped-function-refresh-permissions.md) | CIのFunctions設定読取権限をApp単体へ限定する | 承認済み（CI実検証待ち） |
 | [0007](0007-set-flex-max-instance-count.md) | HTTP Functionの最大インスタンス数を40に設定する | 承認済み |
 
 ## テンプレート
