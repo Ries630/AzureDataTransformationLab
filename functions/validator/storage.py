@@ -37,7 +37,12 @@ def read_csv(path: str, etag: str) -> bytes:
     if hostname and not local_development and not client_id:
         raise RuntimeError("FunctionのManaged Identityが設定されていません。")
     credential = (
-        ManagedIdentityCredential(client_id=client_id) if client_id else AzureCliCredential()
+        # Blob側の通信制限は認証要求へ引き継がれないため、別に待機時間を制限する。
+        ManagedIdentityCredential(
+            client_id=client_id, connection_timeout=5, read_timeout=5, retry_total=0
+        )
+        if client_id
+        else AzureCliCredential()
     )
     try:
         with (

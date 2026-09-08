@@ -178,6 +178,7 @@ class HttpContractTests(unittest.TestCase):
         ).read_bytes()
         self.assertEqual(200, HANDLER(valid_request()).status_code)
         self.assertEqual("test-client", credential.call_args.kwargs["client_id"])
+        self.assertLessEqual(credential.call_args.kwargs["connection_timeout"], 5)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_missing_configuration_is_system_error(self) -> None:
