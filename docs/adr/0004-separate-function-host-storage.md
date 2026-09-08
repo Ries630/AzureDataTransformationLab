@@ -1,7 +1,7 @@
 # ADR-0004: Azure FunctionsのホストStorageと入力Storageを分離する
 
 - ステータス: 承認済み
-- Azure検証: 承認済みのStorage再構築（7件）とサンプル配置を完了。再構築後のstateからFunction追加plan（8件作成、変更・削除なし）を確認済み。Function基盤の適用とManaged Identityによる実機検証は未実施
+- Azure検証: Storage再構築（7件）、サンプル配置、承認済みFunction基盤（8件）の適用とコード発行を完了。AzureのIdentity接続設定は構成と一致。キー付きHTTPは503またはタイムアウトとなり、Managed Identityによる入力読取の実証は未完了
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)
 

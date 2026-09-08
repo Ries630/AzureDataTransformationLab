@@ -465,9 +465,11 @@ az functionapp show --subscription "$ARM_SUBSCRIPTION_ID" \
   --resource-group "$LAB_FUNCTION_RG" --name "$FUNCTION_APP_NAME" \
   --query '{name:name,resourceGroup:resourceGroup}' -o json
 cd .artifacts/validator-build-1
-func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRIPTION_ID" --no-build
+func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRIPTION_ID" --no-build --python
 )
 ```
+
+`--python`は配置先の言語を明示する。PEP 723と事前構築済みパッケージを使う配置先では、Core Toolsが言語を自動判定できないため指定する。
 
 Function keyを付けて、正常・不正サンプルとETag不一致、取得障害を呼び出し、[HTTP契約](architecture.md#http契約)どおりの結果を確認する。Functionが入力CSVをコピー・更新していないことをStorage側で照合する。
 

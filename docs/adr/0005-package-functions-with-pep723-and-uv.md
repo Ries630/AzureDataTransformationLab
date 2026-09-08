@@ -1,7 +1,7 @@
 # ADR-0005: PEP 723の依存関係をuvでAzure Functions用にパッケージする
 
 - ステータス: 承認済み
-- 検証状況: 固定Linux x86_64コンテナーで2回のクリーンビルド、ネイティブ依存のimport、manifestのlock SHA256と実配置依存の一致を確認済み。[PR #26のCI](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34083499804)でもUbuntu 24.04上のテストとLinuxパッケージ生成が成功。Azure上の検証は未実施
+- 検証状況: 固定Linux x86_64コンテナーで2回のクリーンビルド、ネイティブ依存のimport、manifestのlock SHA256と実配置依存の一致を確認済み。[PR #26のCI](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34083499804)でもUbuntu 24.04上のテストとLinuxパッケージ生成が成功。Azureへの発行とvalidateの登録は成功したが、キー付きHTTPは503またはタイムアウトとなり実行結果の照合は未完了
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)
 
