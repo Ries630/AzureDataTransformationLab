@@ -76,11 +76,11 @@ node scripts/terraform/report.mjs \
 
 CIのFunctions用権限は、`infra/ci-plan`の`functions_access_enabled`が`true`かつ`lab_access_enabled`が`true`のときだけ作成する。既定値は`false`である。Function App名は`lab_storage_account_name`から`func-${lab_storage_account_name}`として導出し、実際の既存名が異なる場合は`function_app_name`を明示する。host/deployment StorageはFunctions用rootで管理し、CI用rootはStorageのデータプレーン権限を追加しない。
 
-追加される2つの権限リソースは、Function App単体の`Microsoft.Web/sites/config/list/action`用custom roleと、同roleのFunction App限定assignmentである。custom roleの定義とassignable scopeはlab Resource Groupに置き、assignmentのscopeはFunction App ARM IDに限定する。Application Settings、Connection Strings、Publishing Credentialsを取得し得るactionなので、`Reader`と分離し、`Contributor`は付与しない。Provider 5.3.0の`azurerm_storage_container`のReadはResource Manager経路であることを確認できたため、CI用rootからhost/deployment StorageのBlob Data Readerは付与しない。根拠と見直し条件は[ADR-0006](adr/0006-scoped-function-refresh-permissions.md)に記録する。
+追加される2つの権限リソースは、Function App単体の`Microsoft.Web/sites/config/list/action`と`Microsoft.Web/sites/host/listkeys/action`用custom roleと、同roleのFunction App限定assignmentである。`host/listkeys`はADFのFunction Linked Serviceが使うhost keyをCI planのrefreshで読むために追加した。custom roleの定義とassignable scopeはlab Resource Groupに置き、assignmentのscopeはFunction App ARM IDに限定する。Application Settings、Connection Strings、Publishing Credentials、host keyを取得し得るactionなので、`Reader`と分離し、`Contributor`は付与しない。Provider 5.3.0の`azurerm_storage_container`のReadはResource Manager経路であることを確認できたため、CI用rootからhost/deployment StorageのBlob Data Readerは付与しない。根拠と見直し条件は[ADR-0006](adr/0006-scoped-function-refresh-permissions.md)と[ADR-0008](adr/0008-adf-function-auth-with-host-key.md)に記録する。
 
 ### Functionsを含むCIの再開
 
-学習用rootをFunctions付きでrefreshする場合、workflowを再開する前にEnvironment Secret `TERRAFORM_INPUTS`のJSONへ、実環境で使う値を反映する。少なくとも`functions_enabled: true`、`function_app_name`、`function_plan_name`、`function_storage_account_name`、`function_identity_name`を実際のTerraform stateの名前で指定する。`functions_enabled`がsecretにない場合はTerraformの既定値`false`が使われ、既存Function App等の削除planが出るため、そのplanを適用せずsecretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
+学習用rootをFunctions付きでrefreshする場合、workflowを再開する前にEnvironment Secret `TERRAFORM_INPUTS`のJSONへ、実環境で使う値を反映する。少なくとも`functions_enabled: true`、`function_app_name`、`function_plan_name`、`function_storage_account_name`、`function_identity_name`を実際のTerraform stateの名前で指定する。Data Factoryを含める場合は`data_factory_enabled: true`と、既定名と異なる場合の`data_factory_name`・`data_factory_ir_name`も追加する。`functions_enabled`がsecretにない場合はTerraformの既定値`false`が使われ、既存Function App等の削除planが出るため、そのplanを適用せずsecretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
 
 再開は次の順序で行う。
 

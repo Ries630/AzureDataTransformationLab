@@ -31,10 +31,12 @@ ADF Storage Event Trigger
        ▼
 Azure Data Factory Pipeline
        │
+       ├─ Web Activity（DFS getStatusでETag取得）
+       │
        └─ Azure Function Activity
               │  入力検証
               ▼
-          If Condition
+          Switch
            ├─ VALID
            │    ├─ Copy: landing → validated
            │    └─ Mapping Data Flow
@@ -46,6 +48,7 @@ Azure Data Factory Pipeline
            │
            └─ INVALID
                 ├─ Copy: landing → rejected
+                ├─ Web PUT: rejected/<path>.validation.json
                 └─ 業務RejectとしてPipelineを正常終了
 
 Function例外、アクセス拒否、Timeout、Data Flow失敗
@@ -71,6 +74,10 @@ Azure Monitor Alert → Action Group → Email
 Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。
 
 `validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
+
+Triggerから渡せるのは`folderPath`と`fileName`だけであり、Function契約で必須の`etag`は含まれない。PipelineはWeb Activityで`landing/<path>?action=getStatus`（DFS endpointのJSON API）をManaged Identityで呼び、応答のETagを組み立ててFunctionへ渡す。`comp=metadata`は応答ヘッダーにETagを返すが、Web Activityは応答ヘッダーを`output`へ安定して露出しないため、JSON本文を返す`getStatus`を使う。
+
+ETagを検証してからCopyするまでの間に入力が上書きされると、検証した版とコピーした版がずれる。初期構成ではこの隙間を既知の制約として受け入れ、Phase 6の冪等性で扱う。
 
 ## Azure Functionsの責務
 

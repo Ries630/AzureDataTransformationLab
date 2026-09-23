@@ -494,11 +494,14 @@ Storage Event Trigger
   ↓
 Pipeline
   ↓
+Web Activity（ETag取得）
+  ↓
 Azure Function Activity
   ↓
-If Condition
-  ├─ VALID → validated → Mapping Data Flow → output
-  └─ INVALID → rejected → 正常終了
+Switch
+  ├─ VALID → Copy → validated → Mapping Data Flow → output
+  ├─ INVALID → Copy → rejected + 検証結果JSON → 正常終了
+  └─ その他 → Fail
 ```
 
 Storage Event Triggerは`landing`のCSVだけを対象にする。
@@ -506,6 +509,46 @@ Storage Event Triggerは`landing`のCSVだけを対象にする。
 Retry、Timeout、Function例外時の失敗経路も試す。
 
 完了条件は、VALIDとINVALIDが異なる経路を通り、INVALIDではMapping Data Flowを実行しないことである。
+
+### 1. Providerを登録する
+
+ADFの作成とStorage Event Triggerに`Microsoft.DataFactory`と`Microsoft.EventGrid`が必要である。未登録の場合だけ、前準備の承認を受けて登録する。
+
+```bash
+az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --namespace Microsoft.DataFactory --query registrationState -o tsv
+az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --namespace Microsoft.EventGrid --query registrationState -o tsv
+
+# 未登録であり、登録を承認済みの場合だけ実行する。
+az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Microsoft.DataFactory
+az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Microsoft.EventGrid
+```
+
+登録処理は非同期である。`Registered`になってから次へ進む。
+
+### 2. Data Factory基盤をplanで確認する
+
+`infra/terraform/terraform.tfvars`で`data_factory_enabled = true`を指定し、Functions基盤と同じ手順でplanを作る。保存したplanから対象Subscription、Data Factory、Data Flow用IR（japaneast・General 8コア・TTL 0）、RBAC scope、Triggerの対象範囲、費用を確認する。
+
+Data Flowは`AutoResolve`のIRではなく専用IRを使う。実行リージョンと課金単位をplan時点で確定させるためである。Pipelineの同時実行数は1に固定し、Data Flowクラスターの並行起動で費用が膨らむのを防ぐ。
+
+### 3. 承認されたplanを適用し、動作を確認する
+
+plan内容と費用・後片付け方法を提示し、明示的な適用承認を受けてから実行する。Triggerはapply時点で有効になるため、承認後は`landing`へのCSV投入が即座にPipelineを起動する。
+
+検証は次を対象とする。
+
+- 正常CSVで`validated`と`output`が生成される
+- 不正CSVで`rejected`に原本と`<path>.validation.json`が生成され、Data Flowを実行せずPipelineが成功する
+- `validated`・`output`への書き込みや`landing`への`.csv`以外のファイルでPipelineが起動しない
+- Function停止や存在しないパスでPipelineが失敗する
+
+### Phase 3の完了条件
+
+- VALIDとINVALIDが異なる経路を通り、INVALIDではMapping Data Flowを実行しないことを説明できる。
+- Triggerの対象範囲、Activity間のデータ受け渡し、ADFのManaged IdentityによるStorage・Function呼び出しを説明できる。
+- 障害時にPipelineが失敗経路へ進むことを確認できる。
 
 ## Phase 4: Schema Evolution
 
