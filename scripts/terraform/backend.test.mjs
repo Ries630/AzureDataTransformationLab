@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -57,6 +57,23 @@ function fixture(t) {
     throw new Error('予期しないCLI呼び出し');
   }
   return { root, state, config, remote, calls, run, env: { ARM_SUBSCRIPTION_ID: subscription } };
+}
+
+/** 破棄後に保持した、管理対象を持たないstateをfixtureへ追加する。 */
+function emptyRebuildFixture(t) {
+  const f = fixture(t);
+  f.baseline = {
+    version: 4,
+    lineage: f.state.lineage,
+    serial: 11,
+    outputs: {},
+    resources: [],
+  };
+  f.baselinePath = join(f.root, 'retained-empty.tfstate');
+  writeFileSync(f.baselinePath, JSON.stringify(f.baseline));
+  f.remote.exists = true;
+  f.remote.state = structuredClone(f.baseline);
+  return f;
 }
 
 test('remote stateがなければ通常のinitを実行しない', (t) => {
@@ -163,4 +180,79 @@ test('state属性の裸のsubscription_idも照合する', (t) => {
   f.state.resources[0].instances[0].attributes.subscription_id = '33333333-3333-4333-8333-333333333333';
   writeFileSync(join(f.root, 'terraform.tfstate'), JSON.stringify(f.state));
   assert.throws(() => runBackend('prepare-migration', f));
+});
+
+test('空の保持stateと空のremote stateが一致すれば再構築準備だけを行う', (t) => {
+  const f = emptyRebuildFixture(t);
+  const localStateBefore = readFileSync(join(f.root, 'terraform.tfstate'), 'utf8');
+
+  const result = runBackend('prepare-rebuild', { ...f, baselinePath: f.baselinePath });
+
+  assert.equal(result.preparedForRebuild, true);
+  assert.equal(result.managedResources, 0);
+  assert.match(result.backupDirectory, new RegExp(`${f.root}/\\.state-backups/rebuild-`));
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(result.backupDirectory, 'terraform.tfstate'), 'utf8')),
+    f.baseline,
+  );
+  assert.equal(statSync(join(f.root, '.state-backups')).mode & 0o777, 0o700);
+  assert.equal(statSync(result.backupDirectory).mode & 0o777, 0o700);
+  assert.equal(statSync(join(result.backupDirectory, 'terraform.tfstate')).mode & 0o777, 0o600);
+  assert.equal(readFileSync(join(f.root, 'terraform.tfstate'), 'utf8'), localStateBefore);
+  assert.ok(existsSync(join(f.root, 'remote.backend.hcl')));
+  const initCall = f.calls.find(([program, ...args]) => program === 'terraform' && args.includes('init'));
+  assert.ok(initCall);
+  assert.ok(initCall.includes('-reconfigure'));
+  assert.ok(!initCall.includes('-migrate-state'));
+  assert.ok(f.calls.some(([program, ...args]) => program === 'terraform' && args.includes('pull')));
+  assert.ok(f.calls.every(([program, ...args]) => !args.includes('apply') && !args.includes('push')));
+});
+
+test('再構築準備は保持stateの存在と空条件をinit前に検証する', (t) => {
+  for (const condition of ['missing', 'nonempty', 'bad-lineage', 'bad-serial', 'bad-resources']) {
+    const f = emptyRebuildFixture(t);
+    if (condition === 'missing') f.baselinePath = join(f.root, 'missing.tfstate');
+    if (condition === 'nonempty') f.baseline = f.state;
+    if (condition === 'bad-lineage') f.baseline.lineage = 'not-a-lineage';
+    if (condition === 'bad-serial') f.baseline.serial = -1;
+    if (condition === 'bad-resources') f.baseline.resources = f.state.resources;
+    if (condition !== 'missing') writeFileSync(f.baselinePath, JSON.stringify(f.baseline));
+    assert.throws(
+      () => runBackend('prepare-rebuild', { ...f, baselinePath: f.baselinePath }),
+      /state|保持|空/,
+    );
+    assert.ok(f.calls.every(([program]) => program !== 'terraform'));
+    assert.ok(!existsSync(join(f.root, 'remote.backend.hcl')));
+  }
+});
+
+test('再構築準備はremote Blobがない場合にfallbackせず停止する', (t) => {
+  const f = emptyRebuildFixture(t);
+  f.remote.exists = false;
+
+  assert.throws(
+    () => runBackend('prepare-rebuild', { ...f, baselinePath: f.baselinePath }),
+    /remote/,
+  );
+  assert.ok(f.calls.every(([program]) => program === 'az'));
+  assert.ok(!existsSync(join(f.root, 'remote.backend.hcl')));
+});
+
+test('再構築準備はremote stateのlineage・serial・resources差分を拒否する', (t) => {
+  for (const field of ['lineage', 'serial', 'resources']) {
+    const f = emptyRebuildFixture(t);
+    if (field === 'lineage') f.remote.state.lineage = '33333333-3333-4333-8333-333333333333';
+    if (field === 'serial') f.remote.state.serial += 1;
+    if (field === 'resources') f.remote.state.resources = f.state.resources;
+    assert.throws(
+      () => runBackend('prepare-rebuild', { ...f, baselinePath: f.baselinePath }),
+      /state|一致|空/,
+    );
+  }
+});
+
+test('通常のinitはremoteが空でも空stateからの初期化を許可しない', (t) => {
+  const f = emptyRebuildFixture(t);
+
+  assert.throws(() => runBackend('init', f), /state/);
 });

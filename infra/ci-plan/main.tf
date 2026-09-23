@@ -12,6 +12,11 @@ locals {
   state_account      = "${data.azurerm_resource_group.state.id}/providers/Microsoft.Storage/storageAccounts/${var.state_storage_account_name}"
   state_container    = "${local.state_account}/blobServices/default/containers/tfstate"
   lab_account        = var.lab_access_enabled ? "${data.azurerm_resource_group.lab[0].id}/providers/Microsoft.Storage/storageAccounts/${var.lab_storage_account_name}" : null
+
+  # Functions側の実リソースは別rootで管理するため、名前からARM IDを組み立てる。
+  functions_access  = var.lab_access_enabled && var.functions_access_enabled
+  function_app_name = coalesce(var.function_app_name, "func-${var.lab_storage_account_name}")
+  function_app_id   = local.functions_access ? "${data.azurerm_resource_group.lab[0].id}/providers/Microsoft.Web/sites/${local.function_app_name}" : null
 }
 
 resource "azurerm_user_assigned_identity" "plan" {
@@ -71,6 +76,31 @@ resource "azurerm_role_assignment" "lab_blob_reader" {
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_user_assigned_identity.plan.principal_id
   principal_type       = "ServicePrincipal"
+}
+
+# AzureRMのFunction App refreshに必要な秘密を含み得るlist ActionをFunction App単体へ限定する。
+resource "azurerm_role_definition" "function_app_config_list_reader" {
+  count = local.functions_access ? 1 : 0
+
+  name        = "ADTL Terraform Plan Function App Config List Reader"
+  scope       = data.azurerm_resource_group.lab[0].id
+  description = "対象Function Appの構成listだけをCI planのrefreshに許可する。"
+
+  permissions {
+    actions = ["Microsoft.Web/sites/config/list/action"]
+  }
+
+  # custom roleの定義はlab RGで管理し、assignmentのscopeはFunction Appへさらに限定する。
+  assignable_scopes = [data.azurerm_resource_group.lab[0].id]
+}
+
+resource "azurerm_role_assignment" "function_app_config_list_reader" {
+  count = local.functions_access ? 1 : 0
+
+  scope              = local.function_app_id
+  role_definition_id = azurerm_role_definition.function_app_config_list_reader[0].role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.plan.principal_id
+  principal_type     = "ServicePrincipal"
 }
 
 # 接続切替の導入だけで既存権限を削除・再作成しないよう、対応を明示する。

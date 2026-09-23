@@ -1,0 +1,41 @@
+name: CSV validator
+
+on:
+  pull_request:
+    paths:
+      - 'functions/validator/**'
+      - 'tests/validator/**'
+      - 'scripts/validator/**'
+      - 'samples/**'
+      - 'ruff.toml'
+      - '.github/workflows/validator.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'functions/validator/**'
+      - 'tests/validator/**'
+      - 'scripts/validator/**'
+      - 'samples/**'
+      - 'ruff.toml'
+      - '.github/workflows/validator.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.11.7'
+      - run: uv run --locked functions/validator/function_app.py test
+      - run: uv run scripts/validator/test_pure.py
+      - run: uvx --from ruff==0.15.2 ruff check functions/validator tests/validator scripts/validator
+      - run: uvx --from ruff==0.15.2 ruff format --check functions/validator tests/validator scripts/validator
+      - name: Build Linux deployment directory
+        run: uv run scripts/validator/package.py "$RUNNER_TEMP/validator-package"

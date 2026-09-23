@@ -3,6 +3,15 @@ resource_group_name  = "rg-adtl-learning"
 storage_account_name = "replacewithuniquename"
 location             = "japaneast"
 
+# Functions基盤はStorage再構築とは分け、Functions用planでだけtrueにする。
+functions_enabled = false
+
+# 必要な場合だけ既定名を上書きする。
+# function_app_name             = "func-replacewithuniquename"
+# function_plan_name            = "plan-replacewithuniquename"
+# function_storage_account_name = "fnreplacewithuniquename"
+# function_identity_name        = "id-replacewithuniquename-fn"
+
 tags = {
   project     = "AzureDataTransformationLab"
   environment = "learning"
