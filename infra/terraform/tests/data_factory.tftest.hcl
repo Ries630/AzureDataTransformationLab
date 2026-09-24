@@ -32,6 +32,12 @@ variables {
 run "data_factory_disabled_by_default" {
   command = plan
 
+  # phase3.auto.tfvarsがdata_factory_enabled=trueを設定するため、
+  # このrunでは明示的に無効を指定する。
+  variables {
+    data_factory_enabled = false
+  }
+
   override_data {
     target = data.azurerm_subscription.current
     values = {
