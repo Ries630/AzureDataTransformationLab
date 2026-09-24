@@ -31,7 +31,7 @@ ADF Storage Event Trigger
        ▼
 Azure Data Factory Pipeline
        │
-       ├─ Web Activity（DFS getStatusでETag取得）
+       ├─ Web Activity（DFS Path List）+ Filter（対象のETag取得）
        │
        └─ Azure Function Activity
               │  入力検証
@@ -75,7 +75,7 @@ Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは�
 
 `validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
 
-Triggerから渡せるのは`folderPath`と`fileName`だけであり、Function契約で必須の`etag`は含まれない。PipelineはWeb Activityで`landing/<path>?action=getStatus`（DFS endpointのJSON API）をManaged Identityで呼び、応答のETagを組み立ててFunctionへ渡す。`comp=metadata`は応答ヘッダーにETagを返すが、Web Activityは応答ヘッダーを`output`へ安定して露出しないため、JSON本文を返す`getStatus`を使う。
+Triggerから渡せるのは`folderPath`と`fileName`だけであり、Function契約で必須の`etag`は含まれない。PipelineはWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び、応答の`paths`からFilter Activityで対象ファイルの`etag`を拾ってFunctionへ渡す。`comp=metadata`は応答ヘッダーにETagを返すが、Web Activityは応答ヘッダーを`output`へ安定して露出しないため、JSON本文を返すPath Listを使う。
 
 ETagを検証してからCopyするまでの間に入力が上書きされると、検証した版とコピーした版がずれる。初期構成ではこの隙間を既知の制約として受け入れ、Phase 6の冪等性で扱う。
 

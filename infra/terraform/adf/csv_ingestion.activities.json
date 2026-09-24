@@ -23,7 +23,7 @@
     }
   },
   {
-    "name": "GetInputETag",
+    "name": "ListLandingDir",
     "type": "WebActivity",
     "dependsOn": [{ "activity": "BuildRelativePath", "dependencyConditions": ["Succeeded"] }],
     "policy": {
@@ -36,7 +36,7 @@
     "typeProperties": {
       "method": "GET",
       "url": {
-        "value": "@concat('https://\u0024{storage_account_name}.dfs.core.windows.net/landing/', replace(encodeUriComponent(variables('relativePath')), '%2F', '/'), '?action=getStatus')",
+        "value": "@concat('https://${storage_account_name}.dfs.core.windows.net/landing?resource=filesystem&recursive=false', if(equals(variables('relativeDir'), ''), '', concat('&directory=', encodeUriComponent(variables('relativeDir')))))",
         "type": "Expression"
       },
       "headers": {
@@ -49,9 +49,24 @@
     }
   },
   {
+    "name": "PickInputEntry",
+    "type": "Filter",
+    "dependsOn": [{ "activity": "ListLandingDir", "dependencyConditions": ["Succeeded"] }],
+    "typeProperties": {
+      "items": {
+        "value": "@activity('ListLandingDir').output.paths",
+        "type": "Expression"
+      },
+      "condition": {
+        "value": "@equals(item().name, variables('relativePath'))",
+        "type": "Expression"
+      }
+    }
+  },
+  {
     "name": "ValidateCsv",
     "type": "AzureFunctionActivity",
-    "dependsOn": [{ "activity": "GetInputETag", "dependencyConditions": ["Succeeded"] }],
+    "dependsOn": [{ "activity": "PickInputEntry", "dependencyConditions": ["Succeeded"] }],
     "policy": {
       "timeout": "0.00:02:00",
       "retry": 2,
@@ -68,7 +83,7 @@
       "body": {
         "filesystem": "landing",
         "path": "@variables('relativePath')",
-        "etag": "@concat('\"', coalesce(activity('GetInputETag').output.PathStatus?.etag, activity('GetInputETag').output.PathStatus?.eTag, activity('GetInputETag').output.pathStatus?.etag, activity('GetInputETag').output.pathStatus?.eTag, ''), '\"')"
+        "etag": "@concat('\"', activity('PickInputEntry').output.Value[0].etag, '\"')"
       }
     },
     "linkedServiceName": {
@@ -104,7 +119,7 @@
                 "sink": { "type": "BinarySink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } }
               },
               "inputs": [{
-                "referenceName": "ds-adls-binary",
+                "referenceName": "ds_adls_binary",
                 "type": "DatasetReference",
                 "parameters": {
                   "fileSystem": "landing",
@@ -113,7 +128,7 @@
                 }
               }],
               "outputs": [{
-                "referenceName": "ds-adls-binary",
+                "referenceName": "ds_adls_binary",
                 "type": "DatasetReference",
                 "parameters": {
                   "fileSystem": "validated",
@@ -135,7 +150,7 @@
               },
               "typeProperties": {
                 "dataflow": {
-                  "referenceName": "df-transform-orders",
+                  "referenceName": "df_transform_orders",
                   "type": "DataFlowReference",
                   "datasetParameters": {
                     "source1": {
@@ -146,15 +161,117 @@
                     "sink1": {
                       "fileSystem": "output",
                       "folderPath": "@variables('relativeDir')",
-                      "fileName": "@pipeline().parameters.fileName"
+                      "fileName": ""
                     }
                   }
                 },
                 "compute": { "coreCount": 8, "computeType": "General" },
                 "integrationRuntime": {
-                  "referenceName": "\u0024{ir_name}",
+                  "referenceName": "${ir_name}",
                   "type": "IntegrationRuntimeReference"
                 }
+              }
+            },
+            {
+              "name": "RenameOutput",
+              "type": "Copy",
+              "dependsOn": [{ "activity": "TransformOrders", "dependencyConditions": ["Succeeded"] }],
+              "policy": {
+                "timeout": "0.00:10:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "DelimitedTextSource",
+                  "storeSettings": {
+                    "type": "AzureBlobFSReadSettings",
+                    "recursive": false,
+                    "wildcardFileName": "part-*.csv"
+                  }
+                },
+                "sink": {
+                  "type": "DelimitedTextSink",
+                  "storeSettings": { "type": "AzureBlobFSWriteSettings" }
+                }
+              },
+              "inputs": [{
+                "referenceName": "ds_adls_csv",
+                "type": "DatasetReference",
+                "parameters": {
+                  "fileSystem": "output",
+                  "folderPath": "@variables('relativeDir')",
+                  "fileName": ""
+                }
+              }],
+              "outputs": [{
+                "referenceName": "ds_adls_csv",
+                "type": "DatasetReference",
+                "parameters": {
+                  "fileSystem": "output",
+                  "folderPath": "@variables('relativeDir')",
+                  "fileName": "@pipeline().parameters.fileName"
+                }
+              }]
+            },
+            {
+              "name": "DeletePartFiles",
+              "type": "Delete",
+              "dependsOn": [{ "activity": "RenameOutput", "dependencyConditions": ["Succeeded"] }],
+              "policy": {
+                "timeout": "0.00:05:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "dataset": {
+                  "referenceName": "ds_adls_csv",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "output",
+                    "folderPath": "@variables('relativeDir')",
+                    "fileName": ""
+                  }
+                },
+                "storeSettings": {
+                  "type": "AzureBlobFSReadSettings",
+                  "recursive": true,
+                  "wildcardFileName": "part-*"
+                },
+                "enableLogging": false
+              }
+            },
+            {
+              "name": "DeleteSuccessMarker",
+              "type": "Delete",
+              "dependsOn": [{ "activity": "DeletePartFiles", "dependencyConditions": ["Succeeded"] }],
+              "policy": {
+                "timeout": "0.00:05:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "dataset": {
+                  "referenceName": "ds_adls_csv",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "output",
+                    "folderPath": "@variables('relativeDir')",
+                    "fileName": ""
+                  }
+                },
+                "storeSettings": {
+                  "type": "AzureBlobFSReadSettings",
+                  "recursive": true,
+                  "wildcardFileName": "_SUCCESS"
+                },
+                "enableLogging": false
               }
             }
           ]
@@ -177,7 +294,7 @@
                 "sink": { "type": "BinarySink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } }
               },
               "inputs": [{
-                "referenceName": "ds-adls-binary",
+                "referenceName": "ds_adls_binary",
                 "type": "DatasetReference",
                 "parameters": {
                   "fileSystem": "landing",
@@ -186,7 +303,7 @@
                 }
               }],
               "outputs": [{
-                "referenceName": "ds-adls-binary",
+                "referenceName": "ds_adls_binary",
                 "type": "DatasetReference",
                 "parameters": {
                   "fileSystem": "rejected",
@@ -209,7 +326,7 @@
               "typeProperties": {
                 "method": "PUT",
                 "url": {
-                  "value": "@concat('https://\u0024{storage_account_name}.blob.core.windows.net/rejected/', replace(encodeUriComponent(concat(variables('relativePath'), '.validation.json')), '%2F', '/'))",
+        "value": "@concat('https://${storage_account_name}.blob.core.windows.net/rejected/', replace(encodeUriComponent(concat(variables('relativePath'), '.validation.json')), '%2F', '/'))",
                   "type": "Expression"
                 },
                 "headers": {
@@ -248,4 +365,3 @@
     }
   }
 ]
-

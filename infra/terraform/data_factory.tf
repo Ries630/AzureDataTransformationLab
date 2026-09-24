@@ -98,7 +98,7 @@ resource "azurerm_data_factory_linked_service_azure_function" "validator" {
 resource "azurerm_data_factory_custom_dataset" "binary" {
   count = var.data_factory_enabled ? 1 : 0
 
-  name            = "ds-adls-binary"
+  name            = "ds_adls_binary"
   data_factory_id = azurerm_data_factory.lab[0].id
   type            = "Binary"
   parameters = {
@@ -125,7 +125,7 @@ resource "azurerm_data_factory_custom_dataset" "binary" {
 resource "azurerm_data_factory_dataset_delimited_text" "csv" {
   count = var.data_factory_enabled ? 1 : 0
 
-  name                = "ds-adls-csv"
+  name                = "ds_adls_csv"
   data_factory_id     = azurerm_data_factory.lab[0].id
   linked_service_name = azurerm_data_factory_linked_service_data_lake_storage_gen2.lab[0].name
   parameters = {
@@ -153,7 +153,7 @@ resource "azurerm_data_factory_dataset_delimited_text" "csv" {
 resource "azurerm_data_factory_data_flow" "transform_orders" {
   count = var.data_factory_enabled ? 1 : 0
 
-  name            = "df-transform-orders"
+  name            = "df_transform_orders"
   data_factory_id = azurerm_data_factory.lab[0].id
   script          = file("${path.module}/adf/transform_orders.dfsql")
 
@@ -162,6 +162,17 @@ resource "azurerm_data_factory_data_flow" "transform_orders" {
     dataset {
       name = azurerm_data_factory_dataset_delimited_text.csv[0].name
     }
+  }
+
+  # script内の変換は名前だけ宣言しないとtransformationsがnullになり、sinkまで実行されない。
+  transformation {
+    name = "RenameColumns"
+  }
+  transformation {
+    name = "ConvertTypes"
+  }
+  transformation {
+    name = "DropInvalidRows"
   }
 
   sink {

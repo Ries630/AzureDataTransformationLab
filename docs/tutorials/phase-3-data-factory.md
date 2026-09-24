@@ -24,7 +24,7 @@ Storage Event Trigger（landing/*.csv）
 SetVariable: relativeDir（landing/を除いた相対フォルダー）
 SetVariable: relativePath（relativeDir + fileName）
   ↓
-Web: GET landing/<path>?action=getStatus → ETag取得
+Web: GET landing?resource=filesystem&directory=... → Filterで対象のETag取得
   ↓
 Azure Function: POST /api/validate（filesystem, path, etag）
   ↓
@@ -34,7 +34,7 @@ Switch: ValidateCsv.output.status
   └─ その他   → Fail
 ```
 
-Triggerが渡せるのは`folderPath`と`fileName`だけです。Function契約で必須の`etag`は、Web Activityが`landing/<path>?action=getStatus`（DFS endpointのJSON API）をManaged Identityで呼び、応答の`PathStatus.etag`から組み立てます。`comp=metadata`は応答ヘッダーにETagを返しますが、Web Activityはヘッダーを`output`へ安定して露出しないため、JSON本文を返す`getStatus`を使います。
+Triggerが渡せるのは`folderPath`と`fileName`だけです。Function契約で必須の`etag`は、Web ActivityがDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び、応答の`paths`からFilter Activityで対象ファイルの`etag`を拾って組み立てます。`comp=metadata`は応答ヘッダーにETagを返しますが、Web Activityはヘッダーを`output`へ安定して露出しないため、JSON本文を返すPath Listを使います。
 
 ETagを検証してからCopyするまでの間に入力が上書きされると、検証した版とコピーした版がずれます。Phase 3ではこの隙間を既知の制約として受け入れ、Phase 6の冪等性で扱います。
 
