@@ -81,8 +81,8 @@ run "data_factory_adds_scoped_pipeline" {
   }
 
   assert {
-    condition     = azurerm_data_factory_trigger_blob_event.landing_csv[0].blob_path_begins_with == "/landing/blobs/" && azurerm_data_factory_trigger_blob_event.landing_csv[0].blob_path_ends_with == ".csv" && azurerm_data_factory_trigger_blob_event.landing_csv[0].events == toset(["Microsoft.Storage.BlobCreated"])
-    error_message = "Triggerはlandingの.csv作成だけを対象にしなければなりません。"
+    condition     = azurerm_data_factory_trigger_blob_event.landing_csv[0].blob_path_begins_with == "/landing/blobs/" && azurerm_data_factory_trigger_blob_event.landing_csv[0].blob_path_ends_with == ".csv" && azurerm_data_factory_trigger_blob_event.landing_csv[0].events == toset(["Microsoft.Storage.BlobCreated"]) && azurerm_data_factory_trigger_blob_event.landing_csv[0].ignore_empty_blobs
+    error_message = "Triggerはlandingの.csv作成だけを対象にし、空Blobのイベントを無視しなければなりません。"
   }
 
   assert {
