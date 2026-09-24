@@ -197,6 +197,9 @@ resource "azurerm_data_factory_pipeline" "csv_ingestion" {
   variables = {
     relativeDir  = ""
     relativePath = ""
+    # VALID経路でData Flowの読込・書込行数が一致したときだけokにし、PublishOutputで配置する。
+    publishStatus = "none"
+    rowCounts     = ""
   }
 
   activities_json = templatefile("${path.module}/adf/csv_ingestion.activities.json", {
@@ -215,7 +218,8 @@ resource "azurerm_data_factory_pipeline" "csv_ingestion" {
 }
 
 # landingのCSVだけを対象にし、validated・rejected・outputへの書き込みで再起動しない。
-# 0バイトのCSVも拾えるようignore_empty_blobsをfalseにする。
+# DFS経由のアップロードは空ファイル作成とflushでBlobCreatedが2回発行されるため、
+# 空Blobのイベントを無視して1回の投入でPipelineを1回だけ起動する。0バイトのCSVは処理しない。
 resource "azurerm_data_factory_trigger_blob_event" "landing_csv" {
   count = var.data_factory_enabled ? 1 : 0
 
@@ -225,7 +229,7 @@ resource "azurerm_data_factory_trigger_blob_event" "landing_csv" {
   events                = ["Microsoft.Storage.BlobCreated"]
   blob_path_begins_with = "/landing/blobs/"
   blob_path_ends_with   = ".csv"
-  ignore_empty_blobs    = false
+  ignore_empty_blobs    = true
   activated             = true
 
   pipeline {

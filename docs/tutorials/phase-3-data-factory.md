@@ -21,7 +21,7 @@ Phase 3では、`landing`へのCSV投入をトリガーに、ADF Pipelineが検�
 ```text
 Storage Event Trigger（landing/*.csv）
   ↓ folderPath, fileName
-SetVariable: relativeDir（landing/を除いた相対フォルダー）
+SetVariable: relativeDir（先頭のlandingを除いた相対フォルダー）
 SetVariable: relativePath（relativeDir + fileName）
   ↓
 Web: GET landing?resource=filesystem&directory=... → Filterで対象のETag取得
@@ -29,10 +29,18 @@ Web: GET landing?resource=filesystem&directory=... → Filterで対象のETag取
 Azure Function: POST /api/validate（filesystem, path, etag）
   ↓
 Switch: ValidateCsv.output.status
-  ├─ VALID   → Copy landing→validated → ExecuteDataFlow → output
+  ├─ VALID   → Copy landing→validated → ExecuteDataFlow → output/_staging/<RunId>
   ├─ INVALID → Copy landing→rejected → Web PUT <path>.validation.json
   └─ その他   → Fail
+  ↓
+Switch: 読込行数と書込行数（VALIDのときだけ）
+  ├─ 一致   → Copy _staging/<RunId>/part-*.csv → output/<path> → _staging/<RunId>削除
+  └─ 不一致 → Fail（_stagingを残す）
 ```
+
+Data Flowのsinkは`part-*.csv`という名前で書き出します。runごとの一時フォルダーへ書かせ、RenameOutputでそのフォルダーだけを読んで入力と同じファイル名にまとめます。前のrunが途中で失敗して一時ファイルが残っても、別のrunの結果を取り込みません。
+
+Data Flowは型変換に失敗した行を`DropInvalidRows`で除外します。Functionで検証済みの行が除外されるのは検証と変換の食い違いなので、行数が減ったrunはoutputへ配置せずに失敗させます。
 
 Triggerが渡せるのは`folderPath`と`fileName`だけです。Function契約で必須の`etag`は、Web ActivityがDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び、応答の`paths`からFilter Activityで対象ファイルの`etag`を拾って組み立てます。`comp=metadata`は応答ヘッダーにETagを返しますが、Web Activityはヘッダーを`output`へ安定して露出しないため、JSON本文を返すPath Listを使います。
 
@@ -45,6 +53,7 @@ Switchは`VALID`・`INVALID`以外の値をFailへ送ります。契約外の応
 - HTTP 200・`INVALID` → `rejected`へ原本と`<path>.validation.json`を置き、Pipelineは正常終了
 - Functionの4xx/5xx・Timeout → Azure Function Activityが失敗し、Pipelineが失敗
 - Copy・Data Flow・Webの失敗 → Pipelineが失敗
+- Data Flowで行が除外された → outputへ配置せず、Pipelineが失敗
 
 Azure Function ActivityはFunction側の応答に関係なく約230秒で打ち切られます。そのためActivityのTimeout（2分）はこの上限より短くしています。
 
@@ -66,5 +75,6 @@ Azureリソースの作成前に、[学習計画のplan手順](../learning-plan.
 2. なぜ`If Condition`ではなく`Switch`で分岐し、想定外の値をFailへ送るのか。
 3. なぜData Flow用のIRをAutoResolveではなくjapaneast・最小構成で固定するのか。
 4. なぜADFのGit連携ではなくTerraformで定義を管理するのか。
+5. なぜData Flowの出力を一時フォルダーへ書き、行数を確かめてからoutputへ配置するのか。
 
 回答を書いた後にアーキテクチャとADRを読み直し、実際の定義と一致しているかを確認します。

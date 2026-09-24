@@ -39,19 +39,21 @@ Azure Data Factory Pipeline
           Switch
            ├─ VALID
            │    ├─ Copy: landing → validated
-           │    └─ Mapping Data Flow
-           │           ├─ rename
-           │           ├─ cast
-           │           ├─ filter
-           │           ├─ derived column
-           │           └─ ADLS Gen2 / output
+           │    ├─ Mapping Data Flow → output/_staging/<RunId>
+           │    │      ├─ rename
+           │    │      ├─ cast
+           │    │      ├─ filter
+           │    │      └─ derived column
+           │    └─ 読込行数と書込行数を比較
+           │           ├─ 一致: Copy _staging → output/<path> → _staging削除
+           │           └─ 不一致: Pipeline Failed（_stagingを残す）
            │
            └─ INVALID
                 ├─ Copy: landing → rejected
                 ├─ Web PUT: rejected/<path>.validation.json
                 └─ 業務RejectとしてPipelineを正常終了
 
-Function例外、アクセス拒否、Timeout、Data Flow失敗
+Function例外、アクセス拒否、Timeout、Data Flow失敗、変換による行の欠落
        ↓
 Pipeline Failed
        ↓
@@ -74,6 +76,8 @@ Azure Monitor Alert → Action Group → Email
 Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。
 
 `validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
+
+DFS経由のアップロードは空ファイルの作成とflushでそれぞれ`BlobCreated`を発行する。Triggerは空Blobのイベントを無視し、1回の投入でPipelineを1回だけ起動する。そのため0バイトのCSVはPipelineを起動しない。
 
 Triggerから渡せるのは`folderPath`と`fileName`だけであり、Function契約で必須の`etag`は含まれない。PipelineはWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び、応答の`paths`からFilter Activityで対象ファイルの`etag`を拾ってFunctionへ渡す。`comp=metadata`は応答ヘッダーにETagを返すが、Web Activityは応答ヘッダーを`output`へ安定して露出しないため、JSON本文を返すPath Listを使う。
 
