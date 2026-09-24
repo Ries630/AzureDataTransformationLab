@@ -79,7 +79,7 @@ run "enable_functions_refresh_with_derived_names" {
     condition = (
       length(azurerm_role_definition.function_app_config_list_reader) == 1 &&
       azurerm_role_definition.function_app_config_list_reader[0].scope == data.azurerm_resource_group.lab[0].id &&
-      toset(one(azurerm_role_definition.function_app_config_list_reader[0].permissions).actions) == toset(["Microsoft.Web/sites/config/list/action"]) &&
+      toset(one(azurerm_role_definition.function_app_config_list_reader[0].permissions).actions) == toset(["Microsoft.Web/sites/config/list/action", "Microsoft.Web/sites/host/listkeys/action"]) &&
       toset(azurerm_role_definition.function_app_config_list_reader[0].assignable_scopes) == toset([data.azurerm_resource_group.lab[0].id])
     )
     error_message = "Function Appの構成listだけを許可するcustom roleをlab RGで管理する必要があります。"

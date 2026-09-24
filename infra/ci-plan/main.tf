@@ -78,16 +78,20 @@ resource "azurerm_role_assignment" "lab_blob_reader" {
   principal_type       = "ServicePrincipal"
 }
 
-# AzureRMのFunction App refreshに必要な秘密を含み得るlist ActionをFunction App単体へ限定する。
+# AzureRMのFunction App refreshとADF Linked Service用host key読み取りに必要な、
+# 秘密を含み得るlist ActionをFunction App単体へ限定する。
 resource "azurerm_role_definition" "function_app_config_list_reader" {
   count = local.functions_access ? 1 : 0
 
   name        = "ADTL Terraform Plan Function App Config List Reader"
   scope       = data.azurerm_resource_group.lab[0].id
-  description = "対象Function Appの構成listだけをCI planのrefreshに許可する。"
+  description = "対象Function Appの構成とhost keyのlistだけをCI planのrefreshに許可する。"
 
   permissions {
-    actions = ["Microsoft.Web/sites/config/list/action"]
+    actions = [
+      "Microsoft.Web/sites/config/list/action",
+      "Microsoft.Web/sites/host/listkeys/action",
+    ]
   }
 
   # custom roleの定義はlab RGで管理し、assignmentのscopeはFunction Appへさらに限定する。
