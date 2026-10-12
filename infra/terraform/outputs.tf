@@ -37,3 +37,23 @@ output "function_identity_client_id" {
   description = "Functionsのhost・deploymentに使うUAIのClient ID。秘密鍵ではないため非機密出力とする。"
   value       = var.functions_enabled ? azurerm_user_assigned_identity.function[0].client_id : null
 }
+
+output "data_factory_name" {
+  description = "Data Factory有効時に作成したData Factory名。"
+  value       = var.data_factory_enabled ? azurerm_data_factory.lab[0].name : null
+}
+
+output "data_factory_ir_name" {
+  description = "Data Factory有効時に作成したData Flow用Azure IR名。"
+  value       = var.data_factory_enabled ? azurerm_data_factory_integration_runtime_azure.lab[0].name : null
+}
+
+output "data_factory_pipeline_name" {
+  description = "Data Factory有効時に作成したCSV取り込みPipeline名。"
+  value       = var.data_factory_enabled ? azurerm_data_factory_pipeline.csv_ingestion[0].name : null
+}
+
+output "data_factory_trigger_name" {
+  description = "Data Factory有効時に作成したStorage Event Trigger名。"
+  value       = var.data_factory_enabled ? azurerm_data_factory_trigger_blob_event.landing_csv[0].name : null
+}

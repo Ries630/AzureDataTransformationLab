@@ -114,3 +114,34 @@ variable "function_identity_name" {
     error_message = "function_identity_nameは英数字で始まる2〜128文字の英数字・ハイフン・アンダースコアで指定してください。"
   }
 }
+
+variable "data_factory_enabled" {
+  description = "Azure Data Factoryの学習用基盤を作成する。Functions基盤（functions_enabled）の有効化が前提。"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "data_factory_name" {
+  description = "Data Factory名。省略時はstorage_account_nameから導出する。"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.data_factory_name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{1,62}$", var.data_factory_name))
+    error_message = "data_factory_nameは英数字始まりの英数字・ハイフンで3〜63文字で指定してください。"
+  }
+}
+
+variable "data_factory_ir_name" {
+  description = "Data Flow用のAzure Integration Runtime名。省略時はstorage_account_nameから導出する。"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.data_factory_ir_name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$", var.data_factory_ir_name))
+    error_message = "data_factory_ir_nameは英数字始まりの英数字・ハイフン・アンダースコアで3〜63文字で指定してください。"
+  }
+}

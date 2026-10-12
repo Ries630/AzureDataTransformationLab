@@ -6,11 +6,16 @@ location             = "japaneast"
 # Functions基盤はStorage再構築とは分け、Functions用planでだけtrueにする。
 functions_enabled = false
 
+# Data Factory基盤はFunctions基盤の有効化が前提で、ADF用planでだけtrueにする。
+data_factory_enabled = false
+
 # 必要な場合だけ既定名を上書きする。
 # function_app_name             = "func-replacewithuniquename"
 # function_plan_name            = "plan-replacewithuniquename"
 # function_storage_account_name = "fnreplacewithuniquename"
 # function_identity_name        = "id-replacewithuniquename-fn"
+# data_factory_name             = "adf-replacewithuniquename"
+# data_factory_ir_name          = "ir-replacewithuniquename"
 
 tags = {
   project     = "AzureDataTransformationLab"

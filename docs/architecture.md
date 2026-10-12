@@ -31,24 +31,29 @@ ADF Storage Event Trigger
        ▼
 Azure Data Factory Pipeline
        │
+       ├─ Web Activity（DFS Path List）+ Filter（対象のETag取得）
+       │
        └─ Azure Function Activity
               │  入力検証
               ▼
-          If Condition
+          Switch
            ├─ VALID
            │    ├─ Copy: landing → validated
-           │    └─ Mapping Data Flow
-           │           ├─ rename
-           │           ├─ cast
-           │           ├─ filter
-           │           ├─ derived column
-           │           └─ ADLS Gen2 / output
+           │    ├─ Mapping Data Flow → output/_staging/<RunId>
+           │    │      ├─ rename
+           │    │      ├─ cast
+           │    │      ├─ filter
+           │    │      └─ derived column
+           │    └─ 読込行数と書込行数を比較
+           │           ├─ 一致: Copy _staging → output/<path> → _staging削除
+           │           └─ 不一致: Pipeline Failed（_stagingを残す）
            │
            └─ INVALID
                 ├─ Copy: landing → rejected
+                ├─ Web PUT: rejected/<path>.validation.json
                 └─ 業務RejectとしてPipelineを正常終了
 
-Function例外、アクセス拒否、Timeout、Data Flow失敗
+Function例外、アクセス拒否、Timeout、Data Flow失敗、変換による行の欠落
        ↓
 Pipeline Failed
        ↓
@@ -71,6 +76,12 @@ Azure Monitor Alert → Action Group → Email
 Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。
 
 `validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
+
+DFSのAPIでアップロードすると、Storageは空のファイルを作成した後に中身を書き込み（flush）、それぞれで`BlobCreated`を発行する。Triggerは空Blobのイベントを無視する設定とし、1回の投入でPipelineを1回だけ起動する。この設定により、0バイトのCSVはPipelineを起動しない。
+
+Functionは検証する版を特定するために`etag`を必須とする（[HTTP契約](#http契約)）。一方、TriggerがPipelineへ渡すのは`folderPath`と`fileName`だけである。そこでPipelineは、Functionを呼ぶ前にWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び出し、応答JSONの`paths`からFilter Activityで対象ファイルの`etag`を取り出す。ファイル単体の情報を返す`comp=metadata`はETagを応答ヘッダーで返すが、Web Activityは応答ヘッダーを後続のActivityへ確実に渡せない。そのため、ETagを応答本文に含むPath Listを使う。
+
+ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が異なる。初期構成ではこの制約を受け入れ、Phase 6の冪等性で扱う。
 
 ## Azure Functionsの責務
 
@@ -107,9 +118,9 @@ validate_csv(content: bytes, filename: str) -> dict
 | データ行 | ヘッダーを除くデータ行を1,000行までとする。空ファイル、ヘッダーだけのファイル、上限超過は拒否する |
 | ファイルサイズ | UTF-8デコード前の入力バイト数を1 MiBまでとする |
 | `order_id`、`customer_id` | 空欄および空白だけの値を拒否する文字列 |
-| `amount` | 指数表記を含まない通常の十進表記で、有限な`Decimal`かつ0以上であること |
+| `amount` | 指数表記を含まない通常の十進表記で、有限な`Decimal`かつ0以上であること。Mapping Data Flowの`decimal(18,4)`へ値を変えずに変換できるよう、小数部は4桁まで、整数部は14桁まで（10の14乗未満）とする |
 | `currency` | `JPY`であること |
-| `ordered_at` | ISO 8601日時。日付と時刻の区切りは`T`とし、タイムゾーンは省略可能とする |
+| `ordered_at` | ISO 8601日時。日付と時刻の区切りは`T`とし、タイムゾーンは省略可能とする。小数秒はMapping Data Flowが解釈できる3桁（ミリ秒）までとする |
 
 ヘッダーに不備がある場合は必須セルの値検証を行わず、ヘッダーエラーとデータ行の列数エラーだけを返す。入力サイズと行数の上限内では、必須セルの検証エラーを省略しない。1つのセルに対してエラーを1件返し、巨大なヘッダーによる構造エラーは空欄列名を1件、同じ重複列名を名前ごと1件に集約する。セルに対応しないファイル・構造エラーでは`row`または`column`を`null`にできる。行番号はヘッダーを1行目、最初のデータ行を2行目として数え、quoted field内の改行は1つの論理レコードとして扱う。
 
@@ -211,7 +222,9 @@ Functionが正常に判定を返し、`rejected`への配置に成功した場�
 次はシステム障害としてPipelineを失敗させる。
 
 - Functionの例外
+- Functionからの契約外の`status`
 - ADF PipelineまたはMapping Data Flowの失敗
+- Mapping Data Flowの変換による行の欠落（読込行数と書込行数の不一致）
 - Storageへのアクセス拒否
 - Timeout
 - Managed IdentityまたはRBACの設定不備

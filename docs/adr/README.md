@@ -21,6 +21,8 @@
 | [0005](0005-package-functions-with-pep723-and-uv.md) | PEP 723の依存関係をuvでAzure Functions用にパッケージする | 承認済み |
 | [0006](0006-scoped-function-refresh-permissions.md) | CIのFunctions設定読取権限をApp単体へ限定する | 承認済み |
 | [0007](0007-set-flex-max-instance-count.md) | HTTP Functionの最大インスタンス数を40に設定する | 承認済み |
+| [0008](0008-adf-function-auth-with-host-key.md) | ADFからFunctionへの呼び出しにFunctionキーを使う | 承認済み |
+| [0009](0009-manage-adf-definitions-in-terraform.md) | ADFのPipeline・Dataset・Data FlowをTerraformで管理する | 承認済み |
 
 ## テンプレート
 
