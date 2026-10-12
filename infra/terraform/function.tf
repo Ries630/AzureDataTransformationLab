@@ -139,6 +139,9 @@ resource "azurerm_function_app_flex_consumption" "function" {
   # AzureRM 5.3.0はUAI指定時も空のAccountKeyを含むAzureWebJobsStorageを内部生成する。
   # ユーザー指定のapp_settingsを最後に結合する実装を利用し、空文字でその生成値を上書きする。
   # Microsoft公式のFlex Consumption Terraform例も、このproviderの回避策として空文字を指定している。
+  # planで「+ AzureWebJobsStorage = null」が毎回出るのは、AzureRMのRead側がこのキーを
+  # app_settingsへ入れないための既知差分である（docs/adr/0007の検証結果参照）。
+  # ignore_changesは将来のUpdateで不正な接続文字列をPUTする恐れがあるため使わない。
   # accountName・credential・clientIdでUAIによるhost接続を明示する。
   app_settings = {
     "AzureWebJobsStorage"              = ""

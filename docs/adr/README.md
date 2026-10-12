@@ -23,6 +23,7 @@
 | [0007](0007-set-flex-max-instance-count.md) | HTTP Functionの最大インスタンス数を40に設定する | 承認済み |
 | [0008](0008-adf-function-auth-with-host-key.md) | ADFからFunctionへの呼び出しにFunctionキーを使う | 承認済み |
 | [0009](0009-manage-adf-definitions-in-terraform.md) | ADFのPipeline・Dataset・Data FlowをTerraformで管理する | 承認済み |
+| [0010](0010-require-function-applied-before-data-factory.md) | Data Factory有効化の前にFunction Appを適用済みにする | 承認済み |
 
 ## テンプレート
 

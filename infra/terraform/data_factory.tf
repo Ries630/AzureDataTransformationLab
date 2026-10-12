@@ -81,8 +81,10 @@ data "azurerm_function_app_host_keys" "validator" {
   name                = local.function_app_name
   resource_group_name = azurerm_resource_group.lab.name
 
-  # 初回構築ではFunction Appの作成完了後にキーを読む。
-  depends_on = [azurerm_function_app_flex_consumption.function]
+  # Function Appを先に作成・適用してからdata_factory_enabledを有効にする。
+  # Function Appに未適用の変更があるとキー読み取りがapplyまで遅延し、
+  # Linked Serviceのkeyが毎回「更新あり」のplan差分になるためdepends_onは置かない（ADR-0010）。
+  # Function App未作成のままdata_factory_enabled=trueでplanすると読み取りエラーになる。
 }
 
 resource "azurerm_data_factory_linked_service_azure_function" "validator" {
