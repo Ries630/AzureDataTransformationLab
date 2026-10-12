@@ -1,0 +1,5 @@
+.terraform/
+*.tfstate*
+*.tfplan
+
+# .terraform.lock.hcl はコミット対象。会社で同じ Provider バージョンを使うため。
