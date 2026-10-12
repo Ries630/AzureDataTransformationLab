@@ -17,9 +17,11 @@
 - TerraformによるIaC
 - 冪等性、異常系、再実行を考慮したパイプライン設計
 
-Azureは学習環境であり、最終的な目標は仕事のAWS構成を説明できるようになることである。
+Azureで概念と処理の振る舞いを学び、完了後はAWS向けのコードを作成して会社のAWS学習環境へ持ち込む。[AWS版の計画案](aws-learning-plan.md)に実装順序と完成条件を置く。
 
 ## AWS側で把握している構成
+
+下図は入力S3から始まる後段の構成である。提供元となる別アカウントのGlue Tableからの取得は、[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)でAthenaを方針としている。抽出条件、起動条件、データ量、共有・権限方式は案件資料で確認する。
 
 ```text
 共通基盤
@@ -72,6 +74,8 @@ Terraform
 - CloudWatchとSNSの通知条件
 
 ## 学習環境の制約
+
+以下は個人のAzure学習環境に適用する。会社のAWS学習環境の利用条件・予算・権限・持ち込み方法は、[AWS版の環境条件確認](aws-learning-plan.md#aws-0-会社環境の条件確認)で確認する。
 
 - 月額1,000円以内を目標とする。厳密なハードリミットにはしない。
 - ConsumptionまたはServerlessと、利用可能な最小SKUを優先する。

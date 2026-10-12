@@ -8,6 +8,10 @@
 
 GitHubリポジトリを作成した後は、現在の作業Phaseと進捗をIssueで管理する。
 
+AzureはPhase 3 → Phase 4 → [対応表マスタ（Issue #29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29) → [外部SQL取得（Issue #28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28) → Phase 5 → Phase 6 → Phase 7の順で完成させる。DB参照と外部取得を監視より前に加え、監視と再実行の対象に含める。
+
+Azure完了後のAWSコード作成と会社の学習環境への持ち込みは、[AWS版の計画案](aws-learning-plan.md)を参照する。会社環境の条件確認はAzure学習と並行してよい。
+
 ## 利用ツール
 
 ### コマンドライン
