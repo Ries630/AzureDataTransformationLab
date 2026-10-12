@@ -44,7 +44,9 @@
       },
       "authentication": {
         "type": "MSI",
-        "resource": "https://storage.azure.com"
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
       }
     }
   },
@@ -149,7 +151,7 @@
                 "secureInput": false
               },
               "typeProperties": {
-                "dataflow": {
+                "dataFlow": {
                   "referenceName": "df_transform_orders",
                   "type": "DataFlowReference",
                   "datasetParameters": {
@@ -264,7 +266,9 @@
                 },
                 "authentication": {
                   "type": "MSI",
-                  "resource": "https://storage.azure.com"
+                  "resource": "https://storage.azure.com",
+                  "password": null,
+                  "pfx": null
                 }
               }
             }

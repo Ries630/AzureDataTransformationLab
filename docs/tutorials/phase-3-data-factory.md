@@ -255,11 +255,11 @@ resource "azurerm_data_factory_pipeline" "csv_ingestion" {
     "value": "@concat('https://${storage_account_name}.dfs.core.windows.net/landing?resource=filesystem&recursive=false', if(equals(variables('relativeDir'), ''), '', concat('&directory=', encodeUriComponent(variables('relativeDir')))))",
     "type": "Expression"
   },
-  "authentication": { "type": "MSI", "resource": "https://storage.azure.com" }
+  "authentication": { "type": "MSI", "resource": "https://storage.azure.com", "password": null, "pfx": null }
 }
 ```
 
-URLの末尾には、`relativeDir`が空でなければ`&directory=<フォルダー>`を付けます。`authentication`の`MSI`は、ADFのManaged Identityで認証するという指定です。このとき使われるのが、`data_factory.tf`の`adf_landing_blob_reader`で付与した`landing`の読み取り権限です。応答の本文は、次のような形のJSONです（必要な項目だけを示しています）。
+URLの末尾には、`relativeDir`が空でなければ`&directory=<フォルダー>`を付けます。`authentication`の`MSI`は、ADFのManaged Identityで認証するという指定です。`password`と`pfx`はADFの保存形式が持つ項目で、MSIでは値を持たないため`null`です。このとき使われるのが、`data_factory.tf`の`adf_landing_blob_reader`で付与した`landing`の読み取り権限です。応答の本文は、次のような形のJSONです（必要な項目だけを示しています）。
 
 ```json
 {
@@ -338,7 +338,7 @@ RouteByStatus（Switch）
 `TransformOrders`は、Data Flowの入力と出力の場所、計算資源を指定します（一部を省略しています）。
 
 ```json
-"dataflow": {
+"dataFlow": {
   "referenceName": "df_transform_orders",
   "datasetParameters": {
     "source1": { "fileSystem": "validated", "folderPath": "@variables('relativeDir')", "fileName": "@pipeline().parameters.fileName" },

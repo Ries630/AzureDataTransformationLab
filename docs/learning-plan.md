@@ -527,7 +527,7 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Micro
 
 ### 2. Data Factory基盤をplanで確認する
 
-Data Factoryは`data_factory_enabled`で有効にする。PipelineがFunctionを呼び出すため、Phase 2の`phase2.auto.tfvars`（`functions_enabled = true`）を残したまま、Phase 3用の入力ファイルを追加してplanを作る。
+Data Factoryは`data_factory_enabled`で有効にする。PipelineがFunctionを呼び出すため、Phase 2の`phase2.auto.tfvars`（`functions_enabled = true`）を残したまま、Phase 3用の入力ファイルを追加してplanを作る。Phase 2のplanを先に適用してFunction Appを作成済みにしておく。未適用のまま`data_factory_enabled = true`でplanすると、Linked ServiceのFunctionキー読み取りがエラーになる（[ADR-0010](adr/0010-require-function-applied-before-data-factory.md)）。
 
 ```bash
 # phase3.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
