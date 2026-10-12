@@ -1,6 +1,6 @@
 # AWS版の実装と会社学習環境への持ち込み計画
 
-ステータス: AWS 0の確認キットは[PR #44](https://github.com/Ries630/AzureDataTransformationLab/pull/44)で準備、AWS 1の契約と比較基準を整理済み、AWS 2のコードとIaCはローカル検査を完了し、PRレビュー待ち。会社での実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
+ステータス: AWS 0の確認キットは[PR #44](https://github.com/Ries630/AzureDataTransformationLab/pull/44)で準備、AWS 1の契約と比較基準を整理済み、AWS 2のコードとIaCはマージ済み、AWS 3の持ち込みZIPを準備中。会社での実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
 
 | 段階 | Issue |
 |---|---|
@@ -156,7 +156,7 @@ Step Functionsは、Glue Jobの完了を待つ処理に対応するStandardを�
 
 ## AWS 3: 持ち込み用bundleを作る
 
-ファイル転送できる一つのZIPへまとめ、会社では展開して環境値を設定する。Lambda・Glueの配置物は個人側で生成し、会社でのソース再ビルドを通常手順に含めない。Providerは会社で取得する手順を基本とし、取得できない場合に対象OS・CPU用のmirrorを同梱する。
+[持ち込みZIPの手順](aws-bundle.md)に沿ってファイル転送できる一つのZIPへまとめ、会社では展開して環境値を設定する。Lambda・Glueの配置物は個人側で生成し、会社でのソース再ビルドを通常手順に含めない。Providerは会社で取得する手順を基本とし、取得できない場合に対象OS・CPU用のmirrorを同梱する。
 
 | 同梱物 | 内容 |
 |---|---|

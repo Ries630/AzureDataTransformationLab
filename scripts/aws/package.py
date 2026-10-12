@@ -86,7 +86,12 @@ def build(destination: Path, architecture: str, python_version: str) -> None:
         temporary_zip = Path(temporary) / "lambda.zip"
         with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for item in sorted(staging.rglob("*")):
-                if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc":
+                if (
+                    item.is_file()
+                    and "__pycache__" not in item.parts
+                    and item.suffix != ".pyc"
+                    and item.relative_to(staging).parts[0] not in {"bin", ".lock"}
+                ):
                     # ZIPのmtimeを固定し、同じ入力から同じhashの成果物を作る。
                     info = zipfile.ZipInfo(
                         item.relative_to(staging).as_posix(), (2020, 1, 1, 0, 0, 0)
