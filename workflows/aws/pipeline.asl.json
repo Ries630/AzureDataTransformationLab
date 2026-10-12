@@ -1,0 +1,490 @@
+{
+  "Comment": "入力世代を固定し、所有者条件付きでCSV変換結果を公開する。",
+  "StartAt": "Initialize",
+  "TimeoutSeconds": ${workflow_timeout_seconds},
+  "States": {
+    "Initialize": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "initialize",
+          "event.$": "$",
+          "executionArn.$": "$$.Execution.Id"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Acquire",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Acquire": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "acquire",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Accepted",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Accepted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.accepted",
+          "BooleanEquals": true,
+          "Next": "Validate"
+        }
+      ],
+      "Default": "Done"
+    },
+    "Validate": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "validate",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Validation",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Validation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.validation.status",
+          "StringEquals": "VALID",
+          "Next": "Lock"
+        },
+        {
+          "Variable": "$.validation.status",
+          "StringEquals": "INVALID",
+          "Next": "Done"
+        }
+      ],
+      "Default": "BadContract"
+    },
+    "BadContract": {
+      "Type": "Pass",
+      "Result": {
+        "Error": "ContractError"
+      },
+      "ResultPath": "$.failure",
+      "Next": "Cleanup"
+    },
+    "Lock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "lock",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Locked",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Locked": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.locked",
+          "BooleanEquals": true,
+          "Next": "StartCrawler"
+        }
+      ],
+      "Default": "WaitLock"
+    },
+    "WaitLock": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "Lock"
+    },
+    "StartCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "start_crawler",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "WaitCrawler",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ]
+    },
+    "WaitCrawler": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "PollCrawler"
+    },
+    "PollCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "poll_crawler",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "CrawlerDone",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "CrawlerDone": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.crawlerDone",
+          "BooleanEquals": true,
+          "Next": "PrepareGlue"
+        }
+      ],
+      "Default": "WaitCrawler"
+    },
+    "PrepareGlue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "prepare_glue",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Glue",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ]
+    },
+    "Glue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "${glue_job_name}",
+        "Arguments": {
+          "--data_prefix.$": "$.dataPrefix",
+          "--source_bucket.$": "$.input.bucket",
+          "--source_key.$": "$.validation.sourceKey",
+          "--staging_prefix.$": "$.transform.stagingPrefix",
+          "--input_id.$": "$.input.inputId",
+          "--attempt_id.$": "$.attempt.attemptId"
+        }
+      },
+      "ResultPath": "$.glueResult",
+      "Next": "RecordGlue",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ]
+    },
+    "RecordGlue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "record_glue",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Publish",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Publish": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "publish",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Release",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Cleanup"
+        }
+      ]
+    },
+    "Release": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "release",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "CleanStaging",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Failed"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "CleanStaging": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "clean_staging",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Done",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Failed"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "Cleanup": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${lambda_arn}",
+        "Payload": {
+          "operation": "cleanup",
+          "state.$": "$"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Failed",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.cleanupFailure",
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "PIPELINE_FAILED",
+      "Cause": "Inspect attempt references and retained transform lock."
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

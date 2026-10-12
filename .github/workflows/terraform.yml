@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        root: [infra/terraform, infra/state-backend, infra/ci-plan, infra/aws/preflight]
+        root: [infra/terraform, infra/state-backend, infra/ci-plan, infra/aws/preflight, infra/aws/pipeline]
     defaults:
       run:
         working-directory: ${{ matrix.root }}

@@ -1,0 +1,12 @@
+expected_account_id = "123456789012"
+aws_region          = "ap-northeast-1"
+name                = "adtl-company"
+bucket_name         = "company-approved-unique-bucket"
+create_bucket       = true
+lambda_zip_path     = "../../../dist/aws/lambda.zip"
+# 既存bucketは会社側でEventBridge有効化・保存期間・暗号化を確認する。
+# create_bucket = false
+# existing_bucket_eventbridge_enabled = true
+# notification_email = "company-approved@example.com"
+# 既存bucketでは自分用namespaceを必ず指定する。
+# data_prefix = "adtl-ries/"
