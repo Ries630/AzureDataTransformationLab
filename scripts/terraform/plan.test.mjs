@@ -79,6 +79,18 @@ test('Functions用の入力を許可し、未許可の入力はTerraform実行�
   assert.deepEqual(rejected.calls, []);
 });
 
+test('Data Factory用の入力を許可する', (t) => {
+  const f = fixture(t);
+  const input = JSON.parse(f.env.TERRAFORM_INPUTS);
+  input.functions_enabled = true;
+  input.data_factory_enabled = true;
+  input.data_factory_name = 'adf-exampletest';
+  input.data_factory_ir_name = 'ir-exampletest';
+  f.env.TERRAFORM_INPUTS = JSON.stringify(input);
+  runPlan(f);
+  assert.equal(f.calls[0], 'init');
+});
+
 test('既存state初期化からvalidate・saved plan・showを順に実行し公開用Markdownだけを残す', (t) => {
   const f = fixture(t);
   runPlan(f);
