@@ -271,6 +271,55 @@ class CsvValidationTests(unittest.TestCase):
 
         self.assertEqual(result, {"status": "VALID", "errorCount": 0, "errors": []})
 
+    def test_amount_rejects_values_that_do_not_fit_decimal_18_4(self) -> None:
+        """Data Flowのdecimal(18,4)で丸めや変換失敗になる金額を拒否し、
+        収まる最大値は受け付ける。"""
+        content = (
+            b"order_id,customer_id,amount,currency,ordered_at\n"
+            b"10001,C001,1.23456,JPY,2026-08-27T10:30:00\n"
+            b"10002,C002,100000000000000,JPY,2026-08-27T10:30:00\n"
+            b"10003,C003,99999999999999.9999,JPY,2026-08-27T10:30:00\n"
+            b"10004,C004,00000000000000001.5,JPY,2026-08-27T10:30:00\n"
+        )
+
+        result = validate_csv(content, "orders_v1.csv")
+
+        self.assertEqual(
+            result["errors"],
+            [
+                {
+                    "row": 2,
+                    "column": "amount",
+                    "message": "amount must have at most 4 decimal places",
+                },
+                {
+                    "row": 3,
+                    "column": "amount",
+                    "message": "amount must have at most 14 integer digits",
+                },
+            ],
+        )
+
+    def test_datetime_rejects_fraction_longer_than_milliseconds(self) -> None:
+        """Data Flowが解釈できない4桁以上の小数秒を拒否する。"""
+        content = (
+            b"order_id,customer_id,amount,currency,ordered_at\n"
+            b"10001,C001,1,JPY,2026-08-27T10:30:00.1234Z\n"
+        )
+
+        result = validate_csv(content, "orders_v1.csv")
+
+        self.assertEqual(
+            result["errors"],
+            [
+                {
+                    "row": 2,
+                    "column": "ordered_at",
+                    "message": "ordered_at must be a valid ISO 8601 datetime",
+                }
+            ],
+        )
+
     def test_datetime_rejects_invalid_timezone_minutes(self) -> None:
         """日時のUTCオフセット分が60以上の場合は受け付けない。"""
         content = (

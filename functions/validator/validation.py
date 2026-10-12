@@ -23,9 +23,14 @@ _REQUIRED_COLUMNS = (
     "ordered_at",
 )
 _PLAIN_DECIMAL_PATTERN = re.compile(r"^[+-]?[0-9]+(?:\.[0-9]+)?$")
+# Data Flowはamountをdecimal(18,4)へ変換するため、整数部14桁・小数部4桁を超える値は
+# 丸めまたは変換失敗になる。検証で拒否し、変換で値が変わらないことを保証する。
+_AMOUNT_MAX_INTEGER_DIGITS = 14
+_AMOUNT_MAX_DECIMAL_PLACES = 4
+# Data Flowの日時変換はミリ秒（小数秒3桁）までを解釈するため、小数秒は3桁までとする。
 _DATETIME_PATTERN = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
-    r"(?:\.[0-9]+)?(?P<timezone>Z|[+-][0-9]{2}:[0-9]{2})?$"
+    r"(?:\.[0-9]{1,3})?(?P<timezone>Z|[+-][0-9]{2}:[0-9]{2})?$"
 )
 
 __all__ = ["MAX_BYTES", "MAX_ROWS", "validate_csv"]
@@ -151,7 +156,7 @@ def _validate_customer_id(value: str) -> str | None:
 
 
 def _validate_amount(value: str) -> str | None:
-    """金額が平文の十進数であり、0 以上で有限かを検証する。"""
+    """金額が平文の十進数であり、0 以上で有限かつ変換先の桁数に収まるかを検証する。"""
     try:
         amount = Decimal(value)
     except InvalidOperation:
@@ -163,6 +168,10 @@ def _validate_amount(value: str) -> str | None:
         return "amount must be a plain decimal"
     if amount < 0:
         return "amount must be >= 0"
+    if len(value.partition(".")[2]) > _AMOUNT_MAX_DECIMAL_PLACES:
+        return "amount must have at most 4 decimal places"
+    if amount >= Decimal(10) ** _AMOUNT_MAX_INTEGER_DIGITS:
+        return "amount must have at most 14 integer digits"
     return None
 
 
