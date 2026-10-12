@@ -17,11 +17,11 @@
 - TerraformによるIaC
 - 冪等性、異常系、再実行を考慮したパイプライン設計
 
-Azureで概念と処理の振る舞いを学び、完了後はAWS向けのコードを作成して会社のAWS学習環境へ持ち込む。[AWS版の計画案](aws-learning-plan.md)に実装順序と完成条件を置く。
+AzureでPhase 4までの概念と処理の振る舞いを学んだ後、AWS向けのコードを作成して会社のAWS学習環境での構築を優先する。Azureの残りのPhaseと比較による学習は構築後に行う。[AWS版の計画案](aws-learning-plan.md)に実装順序と完成条件を置く。
 
 ## AWS側で把握している構成
 
-下図は入力S3から始まる後段の構成である。提供元となる別アカウントのGlue Tableからの取得は、[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)でAthenaを方針としている。抽出条件、起動条件、データ量、共有・権限方式は案件資料で確認する。
+下図は入力S3から始まる後段の構成である。提供元となる別アカウントのGlue Tableからの取得は、Athenaを方針とし、[AWS版の計画案](aws-learning-plan.md#aws-2-取得と変換のコードiacを作る)で扱う。抽出条件、起動条件、データ量、共有・権限方式は案件資料で確認する。
 
 ```text
 共通基盤

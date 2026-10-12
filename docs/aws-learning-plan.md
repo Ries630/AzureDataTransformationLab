@@ -1,6 +1,6 @@
 # AWS版の実装と会社学習環境への持ち込み計画
 
-ステータス: Issue化済み。実装・実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。AWSコードの実装と会社環境への適用は、各段階の着手条件を確認して進める。
+ステータス: Issue化済み。実装・実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
 
 | 段階 | Issue |
 |---|---|
@@ -8,43 +8,67 @@
 | AWS 1: 共通契約・比較基準 | [#32](https://github.com/Ries630/AzureDataTransformationLab/issues/32) |
 | AWS 2: コード・IaC | [#33](https://github.com/Ries630/AzureDataTransformationLab/issues/33) |
 | AWS 3: 持ち込みZIP | [#34](https://github.com/Ries630/AzureDataTransformationLab/issues/34) |
-| AWS 4: 会社での実演 | [#35](https://github.com/Ries630/AzureDataTransformationLab/issues/35) |
+| AWS 4: 会社での構築と受け入れ確認 | [#35](https://github.com/Ries630/AzureDataTransformationLab/issues/35) |
+| AWS 5: Azureとの比較と学習 | [#42](https://github.com/Ries630/AzureDataTransformationLab/issues/42) |
 
 ## 目的と完成条件
 
-Azureで検証したデータ取得・検証・変換・監視・再実行をAWS向けに実装し、会社の学習環境で同じサンプルと期待結果を使って学ぶ。個人側ではソースと配置用成果物を作成し、AWS実機での確認は会社の学習環境で行う。
+Azureで検証した検証・変換の処理経路に、Athenaによる取得、監視、再実行を加えてAWS向けに実装し、会社の学習環境で同じサンプルと期待結果を使って学ぶ。個人側ではソースと配置用成果物を作成し、AWS実機での確認は会社の学習環境で行う。
 
-完成条件は次のとおりとする。
+構築完了の条件は次のとおりとし、AWS 4で確認する。
 
 - 会社で許可された方法でコードと成果物を持ち込み、個人GitHubへのログインに依存せず配置できる。
 - Athenaで学習用テーブルから抽出し、自分のS3領域へ保存して検証・変換につなげられる。
-- 正常入力、業務Reject、取得0件、システム障害、スキーマ変更、再実行を実演できる。
+- 正常入力、業務Reject、取得0件、システム障害、スキーマ変更、再実行が期待結果どおりに動く。
+- Terraformと配置手順から構築・更新を再現できる。
+
+学習の完成条件は次のとおりとし、AWS 5で確認する。
+
 - Azure版とAWS版の判定・出力を比較し、サービス固有の違いを説明できる。
-- Terraformと配置手順から構築・更新・後片付けを再現できる。
+- 後片付けの手順と、残すデータ・stateを説明できる。
 
 会社でAWS学習環境が利用可能で、自分用のIAMアカウントが用意されている。IAMの紐づき先と実行権限は未確認。持ち込みはファイル転送とし、コードと配置物を一つのZIPにまとめる。Terraform・AWS CLIは利用可能と仮定して準備し、会社での初回接続時に実行可否を確認する。業務案件の本番仕様とは分けて扱う。
 
-## Azureを終えるまでの順序
+## 進め方と順序
 
-Azureの実装・検証の正は[学習計画](learning-plan.md)、外部SQL取得の正は[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)とする。
+AWS 1〜4を先に進め、会社の学習環境での構築完了を最初の到達点にする。コード・Terraform・ZIPの作成はCodexが担当し、りーすさんの作業は会社環境での操作と承認に絞る。学習資料の作成、Azure Phase 5〜7、AzureとAWSの比較説明は、構築完了後に行う。
 
-| 順序 | 対象 | AWS版へ引き継ぐ成果 |
-|---|---|---|
-| 1 | Phase 3 / #17 | 正常・Reject・障害の処理経路と実出力 |
-| 2 | Phase 4 / #18 | 列追加・必須列削除・型変更の許容と拒否 |
-| 3 | 対応表マスタ / #29 | DB参照・コード変換・参照版の比較結果。AWSへの移植範囲はAWS 1で棚卸しする |
-| 4 | 外部SQL取得 / #28 | 抽出SQL、対象行・除外行のサンプル、0件と公開失敗の挙動 |
-| 5 | Phase 5 / #19 | 取得側と後段側の監視、通知条件、費用の把握 |
-| 6 | Phase 6 / #20 | 入力の世代識別、重複防止、Retry、途中失敗後の再実行 |
-| 7 | Phase 7 / #21 | 再構築手順と一連の実演結果 |
+| 順序 | 対象 | 主な担当 | 内容 |
+|---|---|---|---|
+| 並行 | AWS 0 / #31 | りーすさん（会社） | Codexが用意した確認キットで、会社環境の条件を早めに確かめる |
+| 1 | AWS 1 / #32 | Codex | Azure Phase 3・4の結果を比較基準に固定し、AWSの契約を決める |
+| 2 | AWS 2 / #33 | Codex | 取得・検証・変換・監視・再実行のコードとTerraform |
+| 3 | AWS 3 / #34 | Codex | 会社へ持ち込むZIP |
+| 4 | AWS 4 / #35 | りーすさん（会社）とCodex | 会社でのplan・適用・受け入れ確認。Codexはplanの確認と不具合の修正 |
+| 5 | Azure Phase 5〜7 / #19〜#21 | 学習 | 監視、冪等性、再構築を[学習計画](learning-plan.md)に沿って進める |
+| 6 | AWS 5 / [#42](https://github.com/Ries630/AzureDataTransformationLab/issues/42) | 学習 | Azureとの比較、サービス固有の違いの整理、後片付け |
 
-2026-10-10の確認では、`origin/main`の最新tipは`119d29a`でPhase 2までが取り込まれている。Phase 3は[PR #27](https://github.com/Ries630/AzureDataTransformationLab/pull/27)がOPENで、作業ブランチに定義がある。Issue #17〜#21と#28はOPENであり、コードの存在を学習完了とは扱わない。
+2026-10-12時点の`origin/main`（`1b064a4`）では、Azure Phase 4（#18）までが完了している。AWS 1はこの時点の検証規則・サンプル・実行結果を比較基準にする。監視と冪等性はAzure Phase 5・6の結果を待たず、AWS 1・2でAWSの機構に合わせて先に決める。Azure Phase 5・6では、その決定と比べながら学ぶ。
 
-Phase 7で、入力、抽出結果、検証結果、最終出力を比較用データとして固定する。列と値、decimalの精度・丸め、日時のタイムゾーン、未知列、行数、重複時の出力を比較対象にし、CSVの行順やサービス固有の実行IDは一致条件に含めない。詳細な規則は[アーキテクチャ](architecture.md)を参照し、比較用データに複製しない。
+外部データ取得 [#28](https://github.com/Ries630/AzureDataTransformationLab/issues/28) と対応表マスタ [#29](https://github.com/Ries630/AzureDataTransformationLab/issues/29) は当面の対象外とする。AWSのAthena取得はこの計画の範囲に残し、方針は[AWS 2](#aws-2-取得と変換のコードiacを作る)に置く。Azureに対応する取得処理がないため、取得部分はSQLの期待結果と照合し、Azureとは比較しない。
+
+AWS 1で、Azure Phase 3・4の入力、検証結果、最終出力と、Athena取得の期待結果を比較用データとして固定する。列と値、decimalの精度・丸め、日時のタイムゾーン、未知列、行数、重複時の出力を比較対象にし、CSVの行順やサービス固有の実行IDは一致条件に含めない。詳細な規則は[アーキテクチャ](architecture.md)を参照し、比較用データに複製しない。
+
+### りーすさんの作業
+
+Codexは会社のAWSと会社PCに接続できない。次の作業はりーすさんが行い、それ以外はCodexが進める。
+
+| 時期 | 作業 |
+|---|---|
+| 今すぐ | この計画の承認。AWS 1の詳細計画の承認 |
+| AWS 1〜2と並行 | 確認キットを会社へ持ち込んで実行し、秘密情報を除いた結果を共有する。不足する権限やstate保存先を管理者へ依頼する |
+| 各段階 | AWS 2・3の詳細計画の承認。各PRのマージ |
+| AWS 3の後 | 許可された方法でZIPを会社へ転送する |
+| AWS 4 | 環境値の設定、`terraform plan`の実行と結果の共有、適用の承認と実行、SNSメール購読の確認、サンプル投入と結果の共有 |
+| AWS 5 | 削除planの承認と後片付け |
+
+会社で失敗した場合は、秘密情報を除いたログを持ち帰り、Codexが修正したZIPを作り直す。往復の回数を減らすため、AWS 0で権限とProvider取得を先に確かめる。
 
 ## AWS 0: 会社環境の条件確認
 
-会社環境の確認はAzure学習と並行できる。ファイル転送とTerraform・AWS CLIを使う構成でコードと配置物の準備を進め、環境値は会社で設定する。下表の未確認事項は、コード作成を一律に止める条件にはしない。配置物の形式を変える条件はbundle生成時、実行対象と権限は会社での初回接続・適用前に確定する。
+会社環境の確認はAWS 1〜2の実装と並行し、早めに行う。ファイル転送とTerraform・AWS CLIを使う構成でコードと配置物の準備を進め、環境値は会社で設定する。下表の未確認事項は、コード作成を一律に止める条件にはしない。配置物の形式を変える条件はbundle生成時、実行対象と権限は会社での初回接続・適用前に確定する。
+
+Codexは、会社で実行する読み取り専用の確認キットを先に用意する。キットはツールの版、実行主体、必要な操作の権限シミュレーション、Providerの取得可否、会社PCのOS・CPUを確かめ、結果を秘密情報なしで書き出す。リソースは作成しない。権限シミュレーション自体が拒否された場合は、管理者へ確認する項目として記録する。
 
 | 確認事項 | 実装・持ち込みへの影響 |
 |---|---|
@@ -71,7 +95,7 @@ aws sts get-caller-identity
 
 ## AWS 1: 共通部分とAWS固有の契約を整理する
 
-着手条件はAzure Phase 7の完了と、この段階の実装計画の承認とする。Terraform・AWS CLIの利用とファイル転送を前提に進め、AWS 0の環境値と実行権限は配置前に確認する。
+着手条件はこの段階の実装計画の承認とする。Azure Phase 5〜7の完了は待たない。Terraform・AWS CLIの利用とファイル転送を前提に進め、AWS 0の環境値と実行権限は配置前に確認する。
 
 既存の`functions/validator/validation.py`の`validate_csv(content, filename)`とサンプル・純粋テストを再利用する。検証規則の正は[CSV検証規則](architecture.md#csv検証規則)に保ち、共通コードは一か所で管理してAzure用とLambda用の配置物に同梱する。共通コードの取り出しに伴うAzureのimport・パッケージ構築への変更を、この段階の検証範囲に含める。
 
@@ -83,8 +107,10 @@ Azure固有のHTTP入口、Managed Identity、Blob読み取り、配置用ディ
 - 入力S3のbucket・prefixと世代を限定し、検証後のコピーでも同じ世代を使う方法。
 - `VALID`・`INVALID`とシステム障害の区別。業務Rejectは正常終了、取得・変換・保存の失敗は処理失敗とする。
 - ワークフロー間で渡す入力参照、取得実行ID、オブジェクト世代、検証結果の参照。
+- 重複配送、Retry、途中失敗後の再実行、出力公開の方式。Azure Phase 6の結果を待たず、AWSの機構で決める。
+- システム障害の通知条件。業務Rejectは通知しない。
 
-完了条件は、Azureの比較用データに対する共通検証が変わらず、AWS固有の入出力・世代・失敗契約が明文化されていること。
+完了条件は、Azure Phase 3・4の比較用データに対する共通検証が変わらず、AWS固有の入出力・世代・失敗・再実行の契約が明文化されていること。
 
 ## AWS 2: 取得と変換のコード・IaCを作る
 
@@ -112,7 +138,7 @@ Azure固有のHTTP入口、Managed Identity、Blob読み取り、配置用ディ
 システム障害 → CloudWatch Alarm → SNS（会社の通知先）
 ```
 
-入口の取得方式は[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)のAthena方針を引き継ぐ。Glue ETLは後段の変換を担当する。取得から公開までと、公開後の検証・変換を分けることで、Azureで学んだ処理経路と障害境界を比較できる。
+取得はAthenaが担当し、[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)で決めた方針を引き継ぐ。#28のAzure側の実装は当面の対象外とする。Glue ETLは後段の変換を担当する。取得から公開までと、公開後の検証・変換を分けることで、取得の失敗と後段の失敗を切り分けられる。
 
 Step Functionsは、AthenaとGlue Jobの完了を待つ処理に対応するStandardを候補とする。[Athena連携](https://docs.aws.amazon.com/step-functions/latest/dg/connect-athena.html)と[Glue連携](https://docs.aws.amazon.com/step-functions/latest/dg/connect-glue.html)の`.sync`を使い、開始APIの成功を処理完了と扱わない。Crawlerの開始後も完了確認とTimeoutを設ける。
 
@@ -122,7 +148,7 @@ Step Functionsは、AthenaとGlue Jobの完了を待つ処理に対応するStan
 2. **SQL取得**: 学習用の固定SQLと期待結果から始める。[AthenaのSELECT結果CSV](https://docs.aws.amazon.com/athena/latest/ug/querying-finding-output-files.html)を候補とし、結果をイベント対象外へ保存したあと、既存契約を満たす完成CSVだけを公開する。0件は正常終了して後段を起動しない。
 3. **Lambda検証**: 上限付きのS3読み取りと共通検証を接続する。検証結果の全文はS3へ保存し、Step Functionsには判定と参照を渡す。CSVや大量のエラーを状態データへ載せない。
 4. **Crawler・ETL**: Crawlerは学習用の自分のデータだけを対象とし、外部の提供元Catalogを更新しない。Glueの実装方式・バージョンは会社の条件に合わせ、Azureで確定した変換結果と比較する。
-5. **実行制御**: EventBridgeは`landing`の完成CSVに限定する。取得側から後段を重ねて直接起動せず、実行IDとS3参照で前後の履歴を対応付ける。重複配送、公開途中の失敗、Retry、再実行はAzure Phase 6の結果をAWSの機構へ対応付ける。
+5. **実行制御**: EventBridgeは`landing`の完成CSVに限定する。取得側から後段を重ねて直接起動せず、実行IDとS3参照で前後の履歴を対応付ける。重複配送、公開途中の失敗、Retry、再実行はAWS 1で決めた契約で扱う。
 6. **監視・費用**: 取得・変換のシステム障害と業務Rejectを分ける。Athenaの処理量制限、Glueの同時実行・Timeout、ログ・一時データの保持期間を定める。費用は会社の予算で見積もる。
 
 別アカウントTableの利用は、会社から提供された共有方式を使う。[Athenaのクロスアカウントアクセス](https://docs.aws.amazon.com/athena/latest/ug/lf-athena-limitations-cross-account.html)にはCatalog共有とLake Formationを使う方式があり、S3・KMSを含む権限も確認する。二つ目のアカウントを利用できなければ、自アカウントの学習用CatalogでSQL取得を確認し、クロスアカウント認可は未検証として記録する。模擬する場合は対象行と除外行を持つ固定サンプルを用意し、通常の抽出と取得0件をそれぞれ再現するSQL・期待結果を含める。
@@ -155,23 +181,34 @@ bundleは許可したファイルから生成し、認証情報、個人の`.tfv
 
 完了条件は、別の空ディレクトリへ展開したbundleだけで、manifest照合、配置物のimport、サンプル検証、`terraform init -backend=false`と`terraform validate`まで再現できること。オフライン利用が必要な場合はネットワークなしで確認する。会社のbackendへの接続と実planはAWS 4で行い、ローカルで確認した範囲と実機未確認の範囲をmanifestへ記録する。
 
-## AWS 4: 会社へ持ち込み、実機で学ぶ
+## AWS 4: 会社へ持ち込み、構築を完了する
 
-この段階は会社の許可された端末と認証で実施する。コードの実装承認とは別に、会社環境への適用、サンプル投入、通知の送信、削除の承認を確認する。
+この段階は会社の許可された端末と認証で、りーすさんが実施する。コードの実装承認とは別に、会社環境への適用、サンプル投入、通知の送信の承認を確認する。Codexは共有されたplanと結果を読み、不具合があれば修正したZIPを作り直す。
 
 1. 持ち込み後にSHA-256と対象アカウント・リージョン・実行ロールを照合する。
 2. 会社の環境値とstate保存先を設定してplanを作る。変更対象、権限、費用、配置するコード、後片付け対象を提示する。個人環境の保存済みplanは使わない。
 3. 承認されたplanの適用とコード配置を行い、まず手動実行で取得・Lambda・Glueを個別に確認する。
 4. イベント連携で正常、Reject、0件、スキーマ変更、障害、重複配送、途中失敗後の再実行を試す。前後の実行履歴とS3の公開結果を照合する。
-5. 通知先への送信が許可されていることを確認し、システム障害時の通知と業務Reject時の無通知を実演する。
-6. Azureの比較用データと判定・出力を比較する。サービス固有の違いと未検証事項を記録する。
-7. 学習終了後は、自分で作成した対象の削除planを確認して承認後に片付ける。共有リソース・提供元データを削除対象に含めない。
+5. 通知先への送信が許可されていることを確認し、システム障害時の通知と業務Reject時の無通知を確かめる。
 
-完了条件は[目的と完成条件](#目的と完成条件)を実機で満たし、費用と残すデータ・state・共有依存を説明できること。
+完了条件は[構築完了の条件](#目的と完成条件)を実機で満たし、未検証事項と残っているリソース・費用を記録していること。
+
+## AWS 5: Azureと比較して学ぶ
+
+構築完了後に、Azure Phase 5〜7と合わせて行う。
+
+1. AWS 1で固定した比較用データと、AWSの判定・出力を比較する。
+2. サービス固有の違い、クロスアカウント認可などの未検証事項を整理する。
+3. Azure Phase 5・6で学んだ監視・冪等性と、AWSで先に決めた方式を比べる。
+4. 学習終了後は、自分で作成した対象の削除planを確認して承認後に片付ける。共有リソース・提供元データを削除対象に含めない。
+
+完了条件は[学習の完成条件](#目的と完成条件)を満たし、費用と残すデータ・state・共有依存を説明できること。
 
 ## 判断と着手管理
 
-Azureの既存Issueを先に完了し、AWS 1〜3は仮定とローカルで確認できる完了条件を具体化して着手する。未確認の会社権限はAWS 4の着手条件へ残す。AWS 1〜4は一段階ずつ着手し、AWS 4は実環境での検証手順として扱う。着手順はGitHub Relationshipsを正とし、詳細計画が必要なIssueは`ready-for-agent`を付けず未割り当てで管理する。
+AWS 1〜3は、Azure Phase 5〜7を待たずに、仮定とローカルで確認できる完了条件を具体化して着手する。未確認の会社権限はAWS 4の着手条件へ残す。AWS 1〜5は一段階ずつ着手する。着手順はGitHub Relationshipsを正とし、詳細計画が必要なIssueは`ready-for-agent`を付けず未割り当てで管理する。
+
+構築を急ぐため、各段階の成果物はコード、Terraform、手順書、比較用データを優先する。学習用の解説（`docs/tutorials/`に相当するもの）はAWS 5で書く。
 
 ADR候補は、Athena取得とGlue変換の役割分担、入力世代と出力公開・冪等性の方式、クロスアカウントを模擬する場合の制約とする。会社条件とAzureの検証結果を根拠に要否を判定し、必要な記録を承認済み実装に含める。root・stateの分離やZIP生成の一般的な手順は、手順書で扱う。
 
