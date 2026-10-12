@@ -487,32 +487,26 @@ ADF Pipeline、`validated`・`rejected`へのコピー、Mapping Data Flow、監
 
 ## Phase 3: Data Factory Pipeline
 
-ADF Pipelineを親オーケストレーターとして構築する。
+ADF Pipelineを親オーケストレーターとして構築し、`landing`へのCSV投入から検証、振り分け、変換までを自動で実行する。処理の流れと異常系の正は[アーキテクチャ](architecture.md#azure側の処理フロー)に置く。読み方は[Phase 3の解説](tutorials/phase-3-data-factory.md)を参照する。
 
 ```text
-Storage Event Trigger
+Storage Event Trigger（landingの.csv）
   ↓
 Pipeline
   ↓
-Web Activity（ETag取得）
+Web Activity + Filter（ETag取得）
   ↓
-Azure Function Activity
+Azure Function Activity（入力検証）
   ↓
 Switch
-  ├─ VALID → Copy → validated → Mapping Data Flow → output
+  ├─ VALID → Copy → validated → Mapping Data Flow → 行数確認 → output
   ├─ INVALID → Copy → rejected + 検証結果JSON → 正常終了
   └─ その他 → Fail
 ```
 
-Storage Event Triggerは`landing`のCSVだけを対象にする。
-
-Retry、Timeout、Function例外時の失敗経路も試す。
-
-完了条件は、VALIDとINVALIDが異なる経路を通り、INVALIDではMapping Data Flowを実行しないことである。
-
 ### 1. Providerを登録する
 
-ADFの作成とStorage Event Triggerに`Microsoft.DataFactory`と`Microsoft.EventGrid`が必要である。未登録の場合だけ、前準備の承認を受けて登録する。
+Data Factoryの作成には`Microsoft.DataFactory`、Storage Event Triggerには`Microsoft.EventGrid`のResource Providerが必要である。登録状態を確認し、未登録の場合だけ、前準備として承認を受けてから登録する。
 
 ```bash
 az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
@@ -525,29 +519,54 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Micro
 az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Microsoft.EventGrid
 ```
 
-登録処理は非同期である。`Registered`になってから次へ進む。
+登録は非同期に進む。`registrationState`が`Registered`になったことを確認してから次へ進む。
 
 ### 2. Data Factory基盤をplanで確認する
 
-`infra/terraform/terraform.tfvars`で`data_factory_enabled = true`を指定し、Functions基盤と同じ手順でplanを作る。保存したplanから対象Subscription、Data Factory、Data Flow用IR（japaneast・General 8コア・TTL 0）、RBAC scope、Triggerの対象範囲、費用を確認する。
+Data Factoryは`data_factory_enabled`で有効にする。PipelineがFunctionを呼び出すため、Phase 2の`phase2.auto.tfvars`（`functions_enabled = true`）を残したまま、Phase 3用の入力ファイルを追加してplanを作る。
 
-Data Flowは`AutoResolve`のIRではなく専用IRを使う。実行リージョンと課金単位をplan時点で確定させるためである。Pipelineの同時実行数は1に固定し、Data Flowクラスターの並行起動で費用が膨らむのを防ぐ。
+```bash
+# phase3.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
+(
+set -eu
+umask 077
+set -o noclobber
+printf '%s\n' 'data_factory_enabled = true' > infra/terraform/phase3.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase3.tfplan
+terraform -chdir=infra/terraform show -no-color phase3.tfplan
+)
+```
+
+上のブロックは入力ファイルを新規作成する初回用である。既存ファイルがあればplanを実行せずに終了するため、内容を確認・編集した後にplanとshowの2行だけを実行する。
+
+planでは次を照合する。
+
+- 対象Subscription（`Personal-Sandbox`）とResource Group
+- Data FactoryとData Flow用IR（japaneast・General 8コア・TTL 0）
+- ADFのManaged Identityの権限（`landing`は読み取り、`validated`・`rejected`・`output`は書き込み）
+- Triggerの対象範囲（`landing`の`.csv`、空Blobは無視）
+- 費用の見積もりと後片付け方法
+
+Data Flowは`AutoResolve`のIRではなく専用IRで実行する。実行リージョンと課金単位をplanの時点で確定させるためである。Pipelineの同時実行数は1に固定し、Data Flowのクラスターが並行して起動して費用が増えることを防ぐ。
 
 ### 3. 承認されたplanを適用し、動作を確認する
 
-plan内容と費用・後片付け方法を提示し、明示的な適用承認を受けてから実行する。Triggerはapply時点で有効になるため、承認後は`landing`へのCSV投入が即座にPipelineを起動する。
+planの内容、費用、後片付け方法を提示し、明示的な適用承認を受けてから適用する。Triggerは適用した時点で有効になるため、適用後は`landing`へのCSV投入がすぐにPipelineを起動する。
 
-検証は次を対象とする。
+VALIDのCSVを1本処理するたびにData Flowのクラスターが起動して課金されるため、検証の実行は5〜8回程度に抑える。確認するのは次の4点である。
 
-- 正常CSVで`validated`と`output`が生成される
-- 不正CSVで`rejected`に原本と`<path>.validation.json`が生成され、Data Flowを実行せずPipelineが成功する
-- `validated`・`output`への書き込みや`landing`への`.csv`以外のファイルでPipelineが起動しない
-- Function停止や存在しないパスでPipelineが失敗する
+| 確認すること | 期待する結果 |
+|---|---|
+| 正常なCSVを投入する | `validated`に原本、`output`に変換結果が作られ、Pipelineが成功する |
+| 不正なCSVを投入する | `rejected`に原本と`<path>.validation.json`が作られ、Mapping Data Flowを実行せずにPipelineが成功する |
+| `validated`・`output`へ書き込む、`landing`へ`.csv`以外のファイルを置く | Pipelineが起動しない |
+| Functionを停止する、存在しないパスでPipelineを実行する | Pipelineが失敗する |
 
 ### Phase 3の完了条件
 
 - VALIDとINVALIDが異なる経路を通り、INVALIDではMapping Data Flowを実行しないことを説明できる。
-- Triggerの対象範囲、Activity間のデータ受け渡し、ADFのManaged IdentityによるStorage・Function呼び出しを説明できる。
+- Triggerの対象範囲と、Activity間のデータの受け渡しを説明できる。
+- ADFがStorageへはManaged Identity、FunctionへはFunctionキーで接続する構成を説明できる。
 - 障害時にPipelineが失敗経路へ進むことを確認できる。
 
 ## Phase 4: Schema Evolution

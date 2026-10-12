@@ -77,11 +77,11 @@ Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは�
 
 `validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
 
-DFS経由のアップロードは空ファイルの作成とflushでそれぞれ`BlobCreated`を発行する。Triggerは空Blobのイベントを無視し、1回の投入でPipelineを1回だけ起動する。そのため0バイトのCSVはPipelineを起動しない。
+DFSのAPIでアップロードすると、Storageは空のファイルを作成した後に中身を書き込み（flush）、それぞれで`BlobCreated`を発行する。Triggerは空Blobのイベントを無視する設定とし、1回の投入でPipelineを1回だけ起動する。この設定により、0バイトのCSVはPipelineを起動しない。
 
-Triggerから渡せるのは`folderPath`と`fileName`だけであり、Function契約で必須の`etag`は含まれない。PipelineはWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び、応答の`paths`からFilter Activityで対象ファイルの`etag`を拾ってFunctionへ渡す。`comp=metadata`は応答ヘッダーにETagを返すが、Web Activityは応答ヘッダーを`output`へ安定して露出しないため、JSON本文を返すPath Listを使う。
+Functionは検証する版を特定するために`etag`を必須とする（[HTTP契約](#http契約)）。一方、TriggerがPipelineへ渡すのは`folderPath`と`fileName`だけである。そこでPipelineは、Functionを呼ぶ前にWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び出し、応答JSONの`paths`からFilter Activityで対象ファイルの`etag`を取り出す。ファイル単体の情報を返す`comp=metadata`はETagを応答ヘッダーで返すが、Web Activityは応答ヘッダーを後続のActivityへ確実に渡せない。そのため、ETagを応答本文に含むPath Listを使う。
 
-ETagを検証してからCopyするまでの間に入力が上書きされると、検証した版とコピーした版がずれる。初期構成ではこの隙間を既知の制約として受け入れ、Phase 6の冪等性で扱う。
+ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が異なる。初期構成ではこの制約を受け入れ、Phase 6の冪等性で扱う。
 
 ## Azure Functionsの責務
 
@@ -222,7 +222,9 @@ Functionが正常に判定を返し、`rejected`への配置に成功した場�
 次はシステム障害としてPipelineを失敗させる。
 
 - Functionの例外
+- Functionからの契約外の`status`
 - ADF PipelineまたはMapping Data Flowの失敗
+- Mapping Data Flowの変換による行の欠落（読込行数と書込行数の不一致）
 - Storageへのアクセス拒否
 - Timeout
 - Managed IdentityまたはRBACの設定不備
