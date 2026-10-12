@@ -16,8 +16,32 @@ from datetime import UTC, datetime
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+    ResponseStreamingError,
+)
 from validation import MAX_BYTES, validate_csv
+
+# 同じ所有者条件で安全に繰り返せる操作だけを再試行する。
+RETRYABLE_OPERATIONS = frozenset(
+    {
+        "initialize",
+        "acquire",
+        "validate",
+        "lock",
+        "poll_crawler",
+        "prepare_glue",
+        "record_glue",
+        "release",
+        "clean_staging",
+        "cleanup",
+    }
+)
 
 
 class ContractError(Exception):
@@ -612,7 +636,7 @@ class Pipeline:
             lock
             and lock["attemptId"] == state["attempt"]["attemptId"]
             and lock["executionArn"] == state["attempt"]["executionArn"]
-            and denied_start
+            and (denied_start or state.get("glueNotStarted") is True)
         ):
             self._owned_update(state, "SET gluePending = :no", {":no": False}, key=key)
             lock["gluePending"] = False
@@ -693,16 +717,7 @@ def handler(event, context):
         if code == "ConditionalCheckFailedException":
             raise OwnershipLost("OWNER_CHANGED") from None
         # 開始APIと公開処理は応答消失時の無条件再送を避ける。
-        if operation in (
-            "initialize",
-            "acquire",
-            "validate",
-            "lock",
-            "poll_crawler",
-            "record_glue",
-            "release",
-            "cleanup",
-        ) and code in (
+        if operation in RETRYABLE_OPERATIONS and code in (
             "SlowDown",
             "ThrottlingException",
             "TooManyRequestsException",
@@ -712,5 +727,15 @@ def handler(event, context):
         ):
             raise TransientServiceError(code) from None
         raise ServiceFailure(code) from None
+    except (
+        ConnectionClosedError,
+        ConnectTimeoutError,
+        EndpointConnectionError,
+        ReadTimeoutError,
+        ResponseStreamingError,
+    ):
+        if operation in RETRYABLE_OPERATIONS:
+            raise TransientServiceError("SDK_COMMUNICATION_FAILED") from None
+        raise ServiceFailure("SDK_OPERATION_FAILED") from None
     except BotoCoreError:
         raise ServiceFailure("SDK_OPERATION_FAILED") from None

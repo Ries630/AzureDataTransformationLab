@@ -354,5 +354,76 @@ class RecoveryRegressionTests(unittest.TestCase):
         self.table.delete_item.assert_not_called()
 
 
+class RetryReviewTests(unittest.TestCase):
+    """開始前の安全な復旧と通信障害分類を公開境界で検査する。"""
+
+    def setUp(self):
+        """SDK境界の初期化を共有する。"""
+        ServiceBoundaryTests.setUp(self)
+
+    def test_prepare_failure_clears_pending_before_glue_can_start(self):
+        """準備Lambdaが書込み後に応答を失ってもロックを残さない。"""
+        self.table.get_item.return_value = {"Item": self.state["attempt"] | {"gluePending": True}}
+        self.glue.get_crawler.return_value = {"Crawler": {"State": "READY"}}
+        self.state["glueNotStarted"] = True
+        self.pipeline.cleanup(self.state)
+        self.table.delete_item.assert_called_once()
+        self.glue.get_job_runs.assert_not_called()
+        update = self.table.update_item.call_args.kwargs
+        self.assertEqual(update["ExpressionAttributeValues"][":no"], False)
+        self.assertIn("attemptId = :attempt", update["ConditionExpression"])
+
+    def test_prepare_failure_path_marks_unstarted_but_glue_failure_does_not(self):
+        """ASLの準備失敗だけが未開始と確定する。"""
+        import json
+
+        source = (ROOT / "workflows/aws/pipeline.asl.json").read_text()
+        states = json.loads(source.replace("${workflow_timeout_seconds}", "1800"))["States"]
+        target = states["PrepareGlue"]["Catch"][0]["Next"]
+        self.assertEqual(states[target]["ResultPath"], "$.glueNotStarted")
+        self.assertTrue(states[target]["Result"])
+        self.assertEqual(states[target]["Next"], "Cleanup")
+        self.assertEqual(states["Glue"]["Catch"][0]["Next"], "Cleanup")
+
+    def test_handler_retries_safe_sdk_errors_but_never_restarts_side_effects(self):
+        """通信断とSlowDownは安全な操作だけの再試行対象になる。"""
+        from unittest.mock import patch
+
+        from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
+
+        errors = [
+            ConnectTimeoutError(endpoint_url="https://example.invalid"),
+            ReadTimeoutError(endpoint_url="https://example.invalid"),
+            ClientError({"Error": {"Code": "SlowDown"}}, "ListObjectsV2"),
+        ]
+        env = dict(
+            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
+        )
+        for operation in [
+            "validate",
+            "poll_crawler",
+            "prepare_glue",
+            "clean_staging",
+            "start_crawler",
+            "publish",
+        ]:
+            for error in errors:
+                expected = (
+                    module.ServiceFailure
+                    if operation in ("start_crawler", "publish")
+                    else module.TransientServiceError
+                )
+                with (
+                    self.subTest(operation=operation, error=type(error).__name__),
+                    patch.dict(module.os.environ, env),
+                    patch.object(module.boto3, "client"),
+                    patch.object(module.boto3, "resource"),
+                    patch.object(module, "Pipeline") as pipeline,
+                ):
+                    getattr(pipeline.return_value, operation).side_effect = error
+                    with self.assertRaises(expected):
+                        module.handler({"operation": operation, "state": {}}, None)
+
+
 if __name__ == "__main__":
     unittest.main()

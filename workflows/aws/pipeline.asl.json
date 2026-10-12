@@ -282,7 +282,24 @@
             "States.ALL"
           ],
           "ResultPath": "$.failure",
-          "Next": "Cleanup"
+          "Next": "GlueNotStarted"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientServiceError",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout",
+            "Sandbox.Timedout",
+            "Lambda.Unknown"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
         }
       ]
     },
@@ -485,6 +502,12 @@
     },
     "Done": {
       "Type": "Succeed"
+    },
+    "GlueNotStarted": {
+      "Type": "Pass",
+      "Result": true,
+      "ResultPath": "$.glueNotStarted",
+      "Next": "Cleanup"
     }
   }
 }
