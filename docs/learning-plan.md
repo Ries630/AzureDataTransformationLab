@@ -8,7 +8,7 @@
 
 GitHubリポジトリを作成した後は、現在の作業Phaseと進捗をIssueで管理する。
 
-Phase 4までの完了後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）の後に、この順で進める。[対応表マスタ（Issue #29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)と[外部SQL取得（Issue #28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)は当面の対象外とする。
+Phase 4までの完了後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）の後に、この順で進める。[対応表マスタ（Issue #29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)と[外部SQL取得（Issue #28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)はAWS側を含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
 
 ## 利用ツール
 
