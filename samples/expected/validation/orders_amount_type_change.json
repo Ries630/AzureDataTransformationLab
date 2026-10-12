@@ -1,0 +1,16 @@
+{
+  "status": "INVALID",
+  "errorCount": 2,
+  "errors": [
+    {
+      "row": 2,
+      "column": "amount",
+      "message": "amount must be a plain decimal"
+    },
+    {
+      "row": 3,
+      "column": "amount",
+      "message": "amount must be a plain decimal"
+    }
+  ]
+}

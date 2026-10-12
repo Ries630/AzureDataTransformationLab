@@ -1,0 +1,2 @@
+orderId,customerId,amount,currency,orderedAt,taxIncludedAmount,source_system,promotion_code
+10001,C001,12800.0000,JPY,2026-08-27T10:30:00,14080.00000,SYSTEM_A,SUMMER2026
