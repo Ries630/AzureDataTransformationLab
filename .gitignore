@@ -22,6 +22,8 @@ crash.*.log
 local.settings.json
 .python_packages/
 .artifacts/
+dist/aws/
+infra/aws/pipeline/backend.tf
 
 # Python
 .venv/

@@ -1,6 +1,6 @@
 # AWS版の実装と会社学習環境への持ち込み計画
 
-ステータス: AWS 0の確認キットは[PR #44](https://github.com/Ries630/AzureDataTransformationLab/pull/44)で準備、AWS 1の契約と比較基準を整理済み。会社での実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
+ステータス: AWS 0の確認キットは[PR #44](https://github.com/Ries630/AzureDataTransformationLab/pull/44)で準備、AWS 1の契約と比較基準を整理済み、AWS 2のコードとIaCはローカル検査を完了し、PRレビュー待ち。会社での実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
 
 | 段階 | Issue |
 |---|---|
@@ -55,9 +55,9 @@ Codexは会社のAWSと会社PCに接続できない。次の作業はりーす�
 
 | 時期 | 作業 |
 |---|---|
-| 承認済み | この計画とAWS 1の詳細計画 |
+| 承認済み | この計画とAWS 1・2の詳細計画 |
 | AWS 1〜2と並行 | 確認キットを会社へ持ち込んで実行し、秘密情報を除いた結果を共有する。不足する権限やstate保存先を管理者へ依頼する |
-| 各段階 | AWS 2・3の詳細計画の承認。各PRのマージ |
+| 各段階 | AWS 3の詳細計画の承認。各PRのマージ |
 | AWS 3の後 | 許可された方法でZIPを会社へ転送する |
 | AWS 4 | 環境値の設定、`terraform plan`の実行と結果の共有、適用の承認と実行、SNSメール購読の確認、サンプル投入と結果の共有 |
 | AWS 5 | 削除planの承認と後片付け |
@@ -145,7 +145,7 @@ Step Functionsは、Glue Jobの完了を待つ処理に対応するStandardを�
 
 ### Terraformと配置物
 
-- AWS用rootは`infra/aws/`を候補とし、Azure用root・stateから分離する。
+- AWS用rootは[`infra/aws/pipeline/`](../infra/aws/pipeline/README.md)に置き、Azure用root・stateから分離する。配置物の生成と運用は[実装手順](aws-implementation.md)を参照する。
 - 実行対象アカウント・リージョンを検査し、会社の認証方式とstate保存先を使う。
 - Lambda・Glue・ワークフロー定義はGit管理し、配置用コードとインフラの更新手順を辿れるようにする。
 - Python依存はPEP 723と隣接lockを正とし、Lambdaの対象環境に合わせてZIPを生成する。[Lambdaの配置仕様](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html)に合わせ、Boto3を含む依存を固定して同梱する。
@@ -178,7 +178,7 @@ bundleは許可したファイルから生成し、認証情報、個人の`.tfv
 1. 持ち込み後にSHA-256と対象アカウント・リージョン・実行ロールを照合する。
 2. 会社の環境値とstate保存先を設定してplanを作る。変更対象、権限、費用、配置するコード、後片付け対象を提示する。個人環境の保存済みplanは使わない。
 3. 承認されたplanの適用とコード配置を行い、まず手動実行でLambda・Glueを個別に確認する。
-4. イベント連携で正常、Reject、スキーマ変更、障害、重複配送、途中失敗後の再実行を試す。実行履歴とS3の公開結果を照合する。
+4. イベント連携で正常、Reject、スキーマ変更、障害、重複配送、途中失敗後の再実行を試す。実行履歴とS3の公開結果を照合する。開始権限拒否でpendingが残るケースは、[管理者復旧手順](aws-implementation.md#開始が確実に拒否された場合の管理者復旧)に沿ってCloudTrailの取得権限、未開始の証跡、所有者条件付き更新とロック解放を確認する。
 5. 通知先への送信が許可されていることを確認し、システム障害時の通知と業務Reject時の無通知を確かめる。
 
 完了条件は[構築完了の条件](#目的と完成条件)を実機で満たし、未検証事項と残っているリソース・費用を記録していること。

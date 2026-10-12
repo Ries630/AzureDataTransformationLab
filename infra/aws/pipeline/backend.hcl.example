@@ -1,0 +1,4 @@
+bucket       = "COMPANY-TERRAFORM-STATE-BUCKET"
+key          = "adtl/aws-pipeline/terraform.tfstate"
+region       = "ap-northeast-1"
+use_lockfile = true

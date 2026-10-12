@@ -19,7 +19,7 @@ EventBridgeが実行開始を配送できない → SQS DLQ → CloudWatch Alarm
 
 初期構築にAthena取得と対応表マスタは含めない。[後から追加する機能](aws-learning-plan.md#後から追加する機能)で入口の前処理とGlue変換へ追加する。
 
-実行用bucketは会社設定で固定する。EventBridgeは当該bucketの`Object Created`、`landing/` prefix、`.csv` suffixに限定する。原本は削除しない。`validated/`、`rejected/`、`staging/`、`output/`、配置用`artifacts/`への書き込みは起動対象外。別bucket、対象外key、必須項目欠落の直接実行はシステムエラーとして拒否する。
+実行用bucketは会社設定で固定する。`data_prefix`はこのbucket内の自分用namespaceとし、既存共有bucketでは必須にする。以下の`landing/`などの論理prefixはすべて`data_prefix`の下に置く。新規専用bucketの既定値は空文字。EventBridgeは当該bucketの`Object Created`、`landing/` prefix、`.csv` suffixに限定する。原本は削除しない。`validated/`、`rejected/`、`staging/`、`output/`、配置用`artifacts/`への書き込みは起動対象外。別bucket、対象外key、必須項目欠落の直接実行はシステムエラーとして拒否する。
 
 ## 共通コードと配置
 
@@ -71,7 +71,7 @@ DynamoDBのオンデマンドテーブルを処理制御専用に追加する。
 
 すべての更新・公開処理は所有execution/attempt一致を条件とし、旧attemptの遅れた処理が新しい状態を更新しない。重複受付で先行実行が後から失敗した場合は、手動で再実行する。失敗の自動無限再実行はしない。状態itemを保持する間が重複抑止の期間であり、初期構築ではTTLによる自動削除をしない。後片付けで削除する。
 
-Glue Crawlerは一つを共有し、対象を当該attemptのvalidated prefixに更新する。除外パターンで`validation.json`を除き、CSV原本だけを推論対象にする。異なる入力のCrawler・Catalog・変換が干渉しないよう、DynamoDBの別itemで変換区間の排他を取得する。他入力は破棄せずWaitして取得を再試行する。待機上限を設け、期限超過は失敗とする。ロックは成功/失敗時に所有者条件で解放するが、CrawlerがREADY、記録したGlue job runが終端状態になるまで解放しない。中断で残った場合は所有実行の終端、Crawlerの停止完了、旧Glue jobの終了（必要なら停止して終了待機）を確認して手動復旧する。確認できなければロックを維持し、後続実行で共有Catalogを変更しない。
+Glue Crawlerは一つを共有し、対象を当該attemptのvalidated prefixに更新する。除外パターンで`validation.json`を除き、CSV原本だけを推論対象にする。異なる入力のCrawler・Catalog・変換が干渉しないよう、DynamoDBの別itemで変換区間の排他を取得する。他入力は破棄せずWaitして取得を再試行する。待機上限を設け、期限超過は失敗とする。ロックは成功/失敗時に所有者条件で解放するが、CrawlerがREADY、記録したGlue job runが終端状態になるまで解放しない。中断で残った場合は所有実行の終端、Crawlerの停止完了、旧Glue jobの終了（必要なら停止して終了待機）を確認して手動復旧する。確認できなければロックを維持し、後続実行で共有Catalogを変更しない。開始APIが確実に拒否された場合は、管理者がCloudTrailで要求・対象・時刻・拒否の証跡とサービスの終端を照合し、所有者条件付きで該当pendingだけを解除して復旧する。[操作手順](aws-implementation.md#開始が確実に拒否された場合の管理者復旧)を参照する。証跡不足や開始結果不明の場合は解除しない。
 
 AWS 2の初期設定は全体Timeout 30分、変換排他待機上限15分、Crawler待機上限10分、Glue job timeout10分を基準とする。各待機は全体Timeoutにも従う。会社での起動時間に応じて設定可能にし、増加時は費用を確認する。
 
@@ -101,4 +101,4 @@ Lambda・State Machine・Glueのログには本文や認証情報を出さず、
 
 AWS 2ではAWS APIをモックした検証で、条件付き読取/コピー、サイズReject、SDK失敗、二重受付、所有者条件、Retry、公開途中失敗、再実行、ZIP内の共通コードを確認する。固定入力の期待値は[samples/expected](../samples/expected/README.md)を使う。期待値は仕様から派生したもので実Azure採取値とは区別する。
 
-AWS 4ではIAM・EventBridge・Crawler・Glueの実連携、通知・DLQ、同一keyの更新、重複配送、失敗後再実行、行欠落時の非公開を確認する。AWS 1のローカル比較でこれらが実機検証済みになったとは扱わない。
+AWS 4ではIAM・EventBridge・Crawler・Glueの実連携、通知・DLQ、同一keyの更新、重複配送、失敗後再実行、行欠落時の非公開、開始権限拒否後の証跡確認と管理者復旧を確認する。AWS 1のローカル比較でこれらが実機検証済みになったとは扱わない。
