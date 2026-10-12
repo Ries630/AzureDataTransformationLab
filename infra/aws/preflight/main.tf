@@ -46,6 +46,7 @@ locals {
     "states:TagResource",
     "events:PutRule",
     "events:PutTargets",
+    "events:RemoveTargets",
     "events:DeleteRule",
     "events:TagResource",
     "glue:CreateDatabase",
@@ -79,7 +80,7 @@ locals {
 
 # 実行主体（発行元ロールまたはユーザー）の既存ポリシーで、上記操作をシミュレートする。
 # resource_arns を省略すると "*"（全リソース）としてシミュレートされる。
-# リソースARNは未確定のため省略し、全体の可否だけを見る（目安）。
+# リソースARNは未確定のため省略する。implicitDenyは権限不足と断定できない。
 # なお "*" を明示指定すると provider 側のARN検証でエラーになるため省略する。
 data "aws_iam_principal_policy_simulation" "deploy" {
   policy_source_arn = local.issuer_arn

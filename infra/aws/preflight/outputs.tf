@@ -10,9 +10,14 @@ locals {
     "unknown"
   )
 
-  denied_actions = sort([
+  inconclusive_actions = sort([
     for r in data.aws_iam_principal_policy_simulation.deploy.results :
-    r.action_name if r.decision != "allowed"
+    r.action_name if r.decision == "implicitDeny"
+  ])
+
+  explicitly_denied_actions = sort([
+    for r in data.aws_iam_principal_policy_simulation.deploy.results :
+    r.action_name if r.decision == "explicitDeny"
   ])
 
   allowed_action_count = length([
@@ -43,12 +48,17 @@ output "principal_type" {
 
 output "issuer_name" {
   description = "実行主体のロール名またはユーザー名。ARNのアカウント部分は含まない。"
-  value       = data.aws_iam_session_context.current.issuer_name
+  value       = local.principal_type == "user" ? element(reverse(split("/", local.issuer_arn)), 0) : data.aws_iam_session_context.current.issuer_name
 }
 
-output "denied_actions" {
-  description = "権限シミュレーションで allowed にならなかった操作の一覧（ソート済み）。管理者への依頼候補。"
-  value       = local.denied_actions
+output "inconclusive_actions" {
+  description = "implicitDenyの操作。対象ARNや条件が未指定のため権限不足とは断定できない。"
+  value       = local.inconclusive_actions
+}
+
+output "explicitly_denied_actions" {
+  description = "シミュレーション条件で明示的に拒否された操作。管理者へ理由を確認する。"
+  value       = local.explicitly_denied_actions
 }
 
 output "allowed_action_count" {

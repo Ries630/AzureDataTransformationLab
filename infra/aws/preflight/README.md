@@ -59,7 +59,7 @@ terraform init
 terraform plan
 ```
 
-data source の読み取り（アカウント・リージョン・実行主体）と、IAMの権限シミュレーションだけが実行されます。`No changes.` と `Outputs:` が表示されれば完了です。**apply は不要です。実行しないでください。**
+data source の読み取り（アカウント・リージョン・実行主体）と、IAMの権限シミュレーションだけが実行されます。`Changes to Outputs:` に確認結果が表示され、リソースの追加・変更・削除がなければ完了です。**apply は不要です。実行しないでください。**
 
 ## 共有してよい結果
 
@@ -67,7 +67,7 @@ data source の読み取り（アカウント・リージョン・実行主体�
 
 - `terraform version` の出力
 - `aws --version` の出力
-- `terraform plan` の `Outputs:` 部分
+- `terraform plan` の `Changes to Outputs:` 部分
 - エラーが出た場合はエラーメッセージ（アカウントIDやARNが含まれていれば伏せる）
 
 共有してはいけないもの:
@@ -81,16 +81,18 @@ data source の読み取り（アカウント・リージョン・実行主体�
 |---|---|
 | `terraform init` で registry に接続できない | Provider mirror を持ち込む必要がある。エラー文を記録する |
 | `terraform plan` で `iam:SimulatePrincipalPolicy` が拒否される | シミュレーション権限がない。権限確認は管理者への確認に切り替える |
-| `denied_actions` に項目がある | 管理者に依頼する権限の候補。company-environment.md へ転記する |
+| `inconclusive_actions` に項目がある | 対象ARN・条件が未指定のため判定不能。権限追加を依頼せず、実装後に具体的な対象と条件を照合する |
+| `explicitly_denied_actions` に項目がある | 評価条件で明示的拒否がある。管理者に理由と利用可能な範囲を確認する |
 | 認証エラー（`ExpiredToken`・`NoCredentialProviders` など） | 会社の認証手順（SSOログイン等）を確認してやり直す |
 
 ## 権限シミュレーションの限界
 
 結果はあくまで目安です。AWSの IAM policy simulator の仕様上、次の点に注意してください。
 
-- identity-basedポリシーとSCP（条件キー・リソース範囲を含む）は評価対象になる（対象アカウントがAWS Organizations配下の場合）。実行主体に適用された permissions boundary も評価対象になる。
+- identity-basedポリシーとpermissions boundaryの評価結果を確認する。SCPなど会社の組織制約は管理者にも確認する。
 - リソースベースのポリシー（S3バケットポリシー、KMSキーポリシーなど）は自動では考慮されない。allowed と出ても、実際にはリソース側のポリシーで拒否される場合がある。
 - 条件キーやタグ条件のようにコンテキスト情報が必要な評価は、実際の呼び出しと結果が変わる場合がある。
+- このキットは対象ARNを指定しない。特定のARNだけを許可する最小権限ポリシーでは、利用可能な操作も`implicitDeny`になる。`inconclusive_actions`は不足権限の一覧ではない。操作一覧も実装前の確認候補であり、Terraformの全API呼び出しを網羅した保証ではない。
 
 最終確認は、会社で実際の `terraform plan`・適用を行うときになります。
 
@@ -101,6 +103,6 @@ data source の読み取り（アカウント・リージョン・実行主体�
 確認が終わったら、ローカルに生成されたファイルは消して構いません。
 
 - `.terraform/`（ダウンロードしたProvider）
-- `.terraform.lock.hcl`（消しても次回 `terraform init` で再生成される。リポジトリ側にはコミット済みのものが残る）
+Provider版を再現するため、同梱の`.terraform.lock.hcl`は残してください。
 
 state ファイルは作成されません（plan のみで apply していないため）。

@@ -19,4 +19,5 @@
 | ファイル転送方法 |  | ZIPの持ち込み経路（共有フォルダ・許可された媒体など） |
 | 会社PCのOS・CPU | Windows（CPU: 要確認） | Provider・配置物のアーキテクチャ選択 |
 | Provider取得可否（terraform initの結果） |  | Provider mirror 持ち込みの要否 |
-| 管理者に依頼する権限（denied_actions から転記） |  | 自分で作る範囲と依頼範囲の切り分け |
+| 明示的拒否の理由と利用可能範囲（explicitly_denied_actions） |  | 管理者へ評価条件と理由を確認する |
+| 判定不能の操作（inconclusive_actions） |  | 実装後に具体的な対象ARN・条件を照合する。権限追加依頼に直結させない |
