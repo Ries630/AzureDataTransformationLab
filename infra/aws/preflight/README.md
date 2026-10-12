@@ -19,10 +19,10 @@
 
 ## 手順
 
-すべてPowerShellで、このディレクトリ（`infra/aws/preflight`）に移動してから実行します。
+すべてPowerShellで、このディレクトリに移動してから実行します。持ち込み用ZIPでは展開した `aws0-preflight` フォルダー、リポジトリでは `infra/aws/preflight` です。
 
 ```powershell
-cd infra/aws/preflight
+cd aws0-preflight
 ```
 
 ### 1. ツールの版とOS・CPUを確認する
