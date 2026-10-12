@@ -85,6 +85,8 @@ data "azurerm_function_app_host_keys" "validator" {
   # Function Appに未適用の変更があるとキー読み取りがapplyまで遅延し、
   # Linked Serviceのkeyが毎回「更新あり」のplan差分になるためdepends_onは置かない（ADR-0010）。
   # Function App未作成のままdata_factory_enabled=trueでplanすると読み取りエラーになる。
+  # Function Appを置換する変更では新しいキーがplan時点で読めないため、Function Appだけを
+  # 先に適用し、続けて通常のplan・applyでLinked Serviceへキーを反映する（ADR-0010）。
 }
 
 resource "azurerm_data_factory_linked_service_azure_function" "validator" {

@@ -22,6 +22,8 @@ data sourceから`depends_on`を削除し、plan時点でFunctionキーを読む
 
 Function App未作成のまま`data_factory_enabled = true`でplanすると、data sourceの読み取りがエラーになりplanが失敗する。初回構築や環境の再構築では、Function Appを先にplan・applyしてからData Factoryを有効にする2段階の手順が必要になる。既存の[学習計画](../learning-plan.md)はPhase 2でFunction Appを先に適用する順序なので、手順の変更はない。
 
+Function Appを置換する変更（名前やプランの変更など）では、ホストキーも新しくなる。data sourceはplan時点の旧Appのキーを読むため、Data Factoryを有効にしたまま同時に適用すると、新しいキーがLinked Serviceへ反映されず、`ValidateCsv`が認証に失敗してPipelineが失敗する。失敗はシステム障害として検知でき、次のplanにLinked Serviceの`key`差分が出るので、それを適用して復旧する。置換を伴う変更は、Function Appだけを対象にした適用（`-target`）を先に行い、続けて通常のplan・applyでキーを反映する2段階で進める。
+
 ## 再評価の条件
 
 - AzureRMが`app_settings`の既知差分を解消し、Function Appにpending changeが出なくなった場合、`depends_on`の復帰を検討する。
