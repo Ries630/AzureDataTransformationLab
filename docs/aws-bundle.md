@@ -10,7 +10,7 @@ AWS 3は配置物の準備と展開後の検査を行う。ファイル転送、
 
 | 場所 | 内容 |
 |---|---|
-| `dist/aws/lambda.zip` | Linux arm64 / Python 3.14向けに生成・実importを確認するLambda配置物 |
+| `dist/aws/lambda.zip` | 指定したLinux arm64またはx86_64 / Python 3.14向けに生成・実importを確認するLambda配置物 |
 | `functions/`、`glue/`、`workflows/aws/` | 共通検証とAWS入口、変換、状態機械のソースとlock |
 | `infra/aws/pipeline/` | 独立Terraform root、Provider lock、会社設定とbackendの例 |
 | `samples/` | 架空入力と固定期待結果 |
@@ -26,7 +26,13 @@ manifestとZIP内の`package-manifest.json`を照合し、共通検証コード�
 
 ## 生成側の手順
 
-ソースと文書をcommitし、そのcommitに一致するLambda ZIPを[生成手順](aws-implementation.md#コードと配置物)で用意する。以下の`SOURCE_COMMIT`と各パスを実値へ置き換え、draft・最終ZIPとreportには存在しない新規ファイルを指定する。既定のソースリポジトリは生成スクリプトが置かれたリポジトリで、別の取得先を使う場合は`--repo`で指定する。
+ソースと文書をcommitし、そのcommitに一致するLambda ZIPを[生成手順](aws-implementation.md#コードと配置物)で用意する。Lambdaの既定CPUはarm64。x86_64のLambdaを選ぶ場合は、Linux x86_64の生成環境で次を実行する。
+
+```bash
+uv run scripts/aws/package.py /tmp/adtl-lambda.zip --architecture x86_64 --python-version 3.14
+```
+
+arm64を選ぶ場合は、Linux arm64の生成環境で`--architecture arm64`を指定する。以下の`SOURCE_COMMIT`と各パスを実値へ置き換え、draft・最終ZIPとreportには存在しない新規ファイルを指定する。既定のソースリポジトリは生成スクリプトが置かれたリポジトリで、別の取得先を使う場合は`--repo`で指定する。
 
 ```bash
 uv run scripts/aws/bundle.py /tmp/aws-bundle-draft.zip --lambda-zip /tmp/adtl-lambda.zip --commit SOURCE_COMMIT
@@ -36,9 +42,9 @@ uv run scripts/aws/check_bundle.py /tmp/aws-bundle-extracted --report /tmp/aws-b
 uv run scripts/aws/bundle.py /tmp/aws-transfer-bundle.zip --lambda-zip /tmp/adtl-lambda.zip --commit SOURCE_COMMIT --report /tmp/aws-bundle-report.json
 ```
 
-展開後の検査にはLinux arm64 / Python 3.14、Terraform、bash、`sha256sum`、PowerShellの`pwsh`が必要。これは生成側の検査環境であり、会社PCでPythonを使う要件ではない。reportは展開ディレクトリの外へ置く。最終生成では同じcommitとLambda ZIPを使い、ソース・payloadのhash、対象環境と成功した検査項目が一致するreportだけを受け付ける。reportなしのdraftはmanifestの`verification.status=not_checked`、検査を反映した最終ZIPは`passed`になる。どちらも会社への配置検証を意味する`deploymentVerified`は`false`のまま。
+展開後の検査には、manifestのLambda CPUに一致するLinux arm64またはx86_64 / Python 3.14、Terraform、bash、`sha256sum`、PowerShellの`pwsh`が必要。これは生成側の検査環境であり、会社PCでPythonを使う要件ではない。reportは展開ディレクトリの外へ置く。最終生成では同じcommitとLambda ZIPを使い、ソース・payloadのhash、対象環境と成功した検査項目が一致するreportだけを受け付ける。reportなしのdraftはmanifestの`verification.status=not_checked`、検査を反映した最終ZIPは`passed`になる。どちらも会社への配置検証を意味する`deploymentVerified`は`false`のまま。
 
-配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64で行う。成功した実行の`aws-transfer-bundle` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。ダウンロードしたZIPの具体的なSHA-256は、配布する実体ごとに確認する。
+配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64とLinux x86_64の各CPU上で行う。成功した実行の`aws-transfer-bundle-arm64`または`aws-transfer-bundle-x86_64` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。ダウンロードしたZIPの具体的なSHA-256は、配布する実体ごとに確認する。
 
 ## 受信時の照合
 
@@ -80,14 +86,16 @@ bash scripts/aws/verify-bundle.sh
 
 ## 会社の環境値と配置
 
-確認後は[`infra/aws/pipeline/README.md`](../infra/aws/pipeline/README.md#設定)に沿って、会社の認証、対象アカウント・リージョン、自分用の命名とprefix、state保存先、通知先と保持期間を設定する。`lambda_zip_path`には同梱の`dist/aws/lambda.zip`をrootから参照する相対パスを指定する。提供済みbucketでは専用prefixとEventBridgeの有効化確認が必要。
+会社PCはWindowsとWSLが利用可能なx86_64。**会社PCのCPUと、AWS上で動くLambdaのCPUは別に選べる。**x86_64のPCからarm64のLambdaをTerraform・AWS CLIで配置・管理でき、会社PCでLambda ZIPを実行する必要はない。Lambdaの既定値はarm64のままとし、x86_64のLambdaを選ぶ場合はx86_64のartifactと一致する設定を使う。
+
+確認後は[`infra/aws/pipeline/README.md`](../infra/aws/pipeline/README.md#設定)に沿って、会社の認証、対象アカウント・リージョン、自分用の命名とprefix、state保存先、通知先と保持期間を設定する。`lambda_zip_path`には同梱の`dist/aws/lambda.zip`をrootから参照する相対パスを指定する。提供済みbucketでは専用prefixとEventBridgeの有効化確認が必要。manifestの`runtimes.lambda.architecture`とTerraformの`lambda_architecture`を一致させる。x86_64のLambda ZIPを使う場合は`company.tfvars`に`lambda_architecture = "x86_64"`を指定する。
 
 TerraformとAWS CLIは会社で利用を許可されたものを使い、認証とツールの実行環境をPowerShellまたはWSLのどちらかに揃える。会社で生成したplanを確認し、承認後に適用する。個人側の保存済みplanを転用しない。受け入れ確認、再実行、ロック復旧は[配置・運用手順](aws-implementation.md)を参照する。
 
-Providerは通常、会社での`terraform init`時にネットワークから取得する。今回のZIPにProvider mirrorは含めない。会社で取得できない場合は、使うOS・CPUと配布方法、オフライン要件を確認して対象mirrorを追加生成し、その構成をネットワークなしで検査してから使用する。WindowsとWSLが利用可能でも、CPUと取得可否が確認できたとは扱わない。
+Providerは通常、会社での`terraform init`時にネットワークから取得する。今回のZIPにProvider mirrorは含めない。会社で取得できない場合は、使うOS・CPUと配布方法、オフライン要件を確認して対象mirrorを追加生成し、その構成をネットワークなしで検査してから使用する。会社PCのCPUはx86_64と確認済みだが、Providerの取得権限・ネットワークとオフライン要件は未確認。取得が妨げられる場合だけ、Windows用は`windows_amd64`、WSL用は`linux_amd64`から使う環境を選んでmirrorを追加する。
 
 ## 検査の境界
 
-生成側では新しい空ディレクトリへ展開し、元checkout・個人設定・既存キャッシュに頼らず、同梱内容のhash、Linux arm64でのLambda実import、固定サンプルの検証期待値、`terraform init -backend=false`と`terraform validate`を確認する。manifestの検査記録は、検査したファイルのhashに対応する。
+生成側では新しい空ディレクトリへ展開し、元checkout・個人設定・既存キャッシュに頼らず、同梱内容のhash、manifestに一致するLinux CPUでのLambda実import、固定サンプルの検証期待値、`terraform init -backend=false`と`terraform validate`を確認する。manifestの検査記録は、検査したファイルのhashに対応する。
 
 これらは認証不要の配置準備の検査であり、会社のIAM、EventBridge・Crawler・Glueの実連携、実通知、実backend・plan、費用を検証したものではない。会社での確認は[AWS 4](aws-learning-plan.md#aws-4-会社へ持ち込み構築を完了する)で行う。

@@ -22,6 +22,8 @@ import zipfile
 from importlib.metadata import distributions
 from pathlib import Path, PurePosixPath
 
+MACHINES = {"arm64": {"aarch64", "arm64"}, "x86_64": {"x86_64", "AMD64"}}
+
 CHECK_NAMES = (
     "manifest",
     "lambda_import",
@@ -151,6 +153,19 @@ def command(arguments: list[str], cwd: Path, environment: dict[str, str]) -> Non
         raise CheckFailure("COMMAND_FAILED:" + Path(arguments[0]).name)
 
 
+def lambda_runtime(manifest: dict) -> dict:
+    """CPUとplatformが対応するサポート済みLambda runtimeを返す。"""
+    runtime = manifest["runtimes"]["lambda"]
+    architecture = runtime.get("architecture")
+    if (
+        runtime.get("python") != "3.14"
+        or architecture not in MACHINES
+        or runtime.get("platform") != "linux-" + architecture
+    ):
+        raise CheckFailure("PACKAGE_RUNTIME_MISMATCH")
+    return runtime
+
+
 def extract_package(root: Path, target: Path, manifest: dict) -> None:
     """ZIP内の脱出・リンク・重複を拒否し、対象runtimeと原本hashを照合する。"""
     package = safe_path(root, "dist/aws/lambda.zip")
@@ -175,12 +190,7 @@ def extract_package(root: Path, target: Path, manifest: dict) -> None:
             if total > 250 * 1024 * 1024:
                 raise CheckFailure("ZIP_TOO_LARGE")
         runtime = json.loads(archive.read("package-manifest.json"))
-        if (
-            runtime != manifest["runtimes"]["lambda"]
-            or runtime.get("python") != "3.14"
-            or runtime.get("architecture") != "arm64"
-            or runtime.get("platform") != "linux-arm64"
-        ):
+        if runtime != lambda_runtime(manifest):
             raise CheckFailure("PACKAGE_RUNTIME_MISMATCH")
         validation = safe_path(root, "functions/validator/validation.py")
         lock = safe_path(root, "functions/aws/handler.py.lock")
@@ -223,7 +233,7 @@ def inspect_bundle(root: Path, report_path: Path) -> bool:
         "schemaVersion": 1,
         "sourceCommit": "",
         "payloadDigest": "",
-        "platform": "linux-arm64",
+        "platform": "",
         "checks": checks,
         "deploymentVerified": False,
     }
@@ -234,12 +244,14 @@ def inspect_bundle(root: Path, report_path: Path) -> bool:
         report["payloadDigest"] = hashlib.sha256(canonical(manifest["files"])).hexdigest()
         checks[index]["status"] = "passed"
         index += 1
+        runtime = lambda_runtime(manifest)
+        report["platform"] = runtime["platform"]
         if (
             platform.system() != "Linux"
-            or platform.machine() not in {"aarch64", "arm64"}
+            or platform.machine() not in MACHINES[runtime["architecture"]]
             or sys.version_info[:2] != (3, 14)
         ):
-            raise CheckFailure("LINUX_ARM64_PYTHON_314_REQUIRED")
+            raise CheckFailure("MATCHING_LINUX_ARCHITECTURE_PYTHON_314_REQUIRED")
         with tempfile.TemporaryDirectory(prefix="adtl-bundle-check-") as temporary:
             scratch = Path(temporary)
             environment = isolated_environment(scratch)

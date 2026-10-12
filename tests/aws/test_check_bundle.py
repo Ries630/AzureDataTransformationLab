@@ -30,7 +30,10 @@ class CheckerBoundaryTests(unittest.TestCase):
             "schemaVersion": 1,
             "source": {"commit": "0" * 40},
             "generator": {"name": "scripts/aws/bundle.py", "version": 1},
-            "runtimes": {"glue": {"version": "5.1", "spark": "3.5.6", "python": "3.11"}},
+            "runtimes": {
+                "glue": {"version": "5.1", "spark": "3.5.6", "python": "3.11"},
+                "lambda": {"python": "3.14", "architecture": "arm64", "platform": "linux-arm64"},
+            },
             "files": [
                 {
                     "path": "checksums.sha256",
@@ -117,6 +120,87 @@ class CheckerBoundaryTests(unittest.TestCase):
                 sorted(p.name for p in root.iterdir()),
                 ["checksums.sha256", "data", "manifest.json", "manifest.sha256"],
             )
+
+    def test_matching_host_cpu_reports_the_bundle_platform(self):
+        """CPUごとの検査成功記録を対象Lambdaのplatformへ結び付ける。"""
+        for architecture, machine in [("arm64", "aarch64"), ("x86_64", "x86_64")]:
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / "bundle"
+                manifest = self.fixture(root)
+                manifest["runtimes"]["lambda"].update(
+                    {
+                        "architecture": architecture,
+                        "platform": "linux-" + architecture,
+                    }
+                )
+                (root / "manifest.json").write_text(json.dumps(manifest))
+                report = Path(temp) / "report.json"
+                with (
+                    patch.object(module.platform, "system", return_value="Linux"),
+                    patch.object(module.platform, "machine", return_value=machine),
+                    patch.object(module.sys, "version_info", (3, 14)),
+                    patch.object(module, "extract_package"),
+                    patch.object(module, "command"),
+                ):
+                    self.assertTrue(module.inspect_bundle(root, report))
+                evidence = json.loads(report.read_text())
+                self.assertEqual(evidence["platform"], "linux-" + architecture)
+                self.assertTrue(all(c["status"] == "passed" for c in evidence["checks"]))
+
+    def test_opposite_host_cpu_does_not_report_success(self):
+        """異なるCPU上でのimport検査を成功扱いしない。"""
+        for architecture, machine in [("arm64", "x86_64"), ("x86_64", "aarch64")]:
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / "bundle"
+                manifest = self.fixture(root)
+                manifest["runtimes"]["lambda"].update(
+                    {
+                        "architecture": architecture,
+                        "platform": "linux-" + architecture,
+                    }
+                )
+                (root / "manifest.json").write_text(json.dumps(manifest))
+                report = Path(temp) / "report.json"
+                with (
+                    patch.object(module.platform, "system", return_value="Linux"),
+                    patch.object(module.platform, "machine", return_value=machine),
+                    patch.object(module.sys, "version_info", (3, 14)),
+                    patch.object(module, "extract_package") as extract,
+                ):
+                    self.assertFalse(module.inspect_bundle(root, report))
+                    extract.assert_not_called()
+                evidence = json.loads(report.read_text())
+                self.assertEqual(evidence["platform"], "linux-" + architecture)
+                self.assertEqual(evidence["checks"][1]["status"], "failed")
+
+    def test_both_architectures_can_extract_matching_package(self):
+        """ZIPとmanifestに一致するCPUを固定値で排除しない。"""
+        for architecture in ("arm64", "x86_64"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / "functions/aws").mkdir(parents=True)
+                (root / "functions/validator").mkdir(parents=True)
+                (root / "dist/aws").mkdir(parents=True)
+                (root / "functions/aws/handler.py").write_text("# handler")
+                validation = root / "functions/validator/validation.py"
+                validation.write_text("# validation")
+                lock = root / "functions/aws/handler.py.lock"
+                lock.write_text("package = []")
+                runtime = {
+                    "python": "3.14",
+                    "architecture": architecture,
+                    "platform": "linux-" + architecture,
+                    "dependencies": [],
+                    "validation_sha256": module.sha256(validation),
+                    "lock_sha256": module.sha256(lock),
+                }
+                with zipfile.ZipFile(root / "dist/aws/lambda.zip", "w") as archive:
+                    archive.writestr("handler.py", "# handler")
+                    archive.writestr("validation.py", "# validation")
+                    archive.writestr("package-manifest.json", json.dumps(runtime))
+                target = root / "extracted"
+                module.extract_package(root, target, {"runtimes": {"lambda": runtime}})
+                self.assertEqual((target / "handler.py").read_text(), "# handler")
 
     def test_zip_traversal_or_symlink_is_rejected_before_extraction(self):
         """Lambda ZIPの脱出パスやsymlinkを展開前に拒否する。"""
