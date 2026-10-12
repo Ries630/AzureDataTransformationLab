@@ -17,7 +17,9 @@
 
 Glue Crawlerはスキーマを推論し、そのメタデータをGlue Data Catalogへ保存する。
 
-初期構成で再現するのはスキーマ推論とスキーマ変化への対応であり、カタログの永続化、パーティション管理、組織的なデータガバナンスは対象外とする。
+Azureの初期構成で再現するのはスキーマ推論とスキーマ変化への対応であり、カタログの永続化、パーティション管理、組織的なデータガバナンスは対象外とする。
+
+外部SQL取得の追加は[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)、Azure完了後のAWS構成案は[AWS版の計画案](aws-learning-plan.md#aws-2-取得と変換のコードiacを作る)を参照する。
 
 ## Azure側の処理フロー
 
