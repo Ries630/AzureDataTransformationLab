@@ -30,27 +30,28 @@ Functionの判定は`tests/validator/test_schema_evolution_samples.py`で固定�
 
 ## 3. 比較結果
 
-Debugの結果は`Data preview`と`Inspect`で記録します。各セルには、失敗か成功か、出力された列（宣言外の列の扱い）、推論された型、行数を書きます。
+2026-10-12に、Debugを1セッション（約9分、24実行）で動かして記録しました。Debugのpreviewは列の型をすべてstringで表示するため、型の違いはpreviewからは読み取れません。
 
 | サンプル | Strict | Tolerant | Drift | Drift＋型推論 |
 |---|---|---|---|---|
-| `orders_v1.csv` | 未記録 | 未記録 | 未記録 | 未記録 |
-| `orders_v2.csv`（列追加） | 未記録 | 未記録 | 未記録 | 未記録 |
-| `orders_v3.csv`（未知の列2つ） | 未記録 | 未記録 | 未記録 | 未記録 |
-| `orders_drifted_types.csv`（数値・日時の追加列） | 未記録 | 未記録 | 未記録 | 未記録 |
-| `orders_missing_required.csv`（`customer_id`なし） | 未記録 | 未記録 | 未記録 | 未記録 |
-| `orders_amount_type_change.csv`（`"12,800"`、`4500円`） | 未記録 | 未記録 | 未記録 | 未記録 |
+| `orders_v1.csv` | 成功・3行 | 成功・3行 | 成功・3行 | 成功・3行 |
+| `orders_v2.csv`（列追加） | 成功・追加列を出力しない | 成功・追加列を出力しない | 成功・`source_system`を出力 | 成功・`source_system`を出力 |
+| `orders_v3.csv`（未知の列2つ） | 成功・追加2列を出力しない | 成功・追加2列を出力しない | 成功・2列を出力 | 成功・2列を出力 |
+| `orders_drifted_types.csv`（数値・日時の追加列） | 成功・追加3列を出力しない | 成功・追加3列を出力しない | 成功・3列をstringで出力 | 成功・3列をstringで出力 |
+| `orders_missing_required.csv`（`customer_id`なし） | **失敗**（`DF-Executor-InvalidInputColumns`） | 成功・0行 | 成功・0行 | 成功・0行 |
+| `orders_amount_type_change.csv`（`"12,800"`、`4500円`） | 成功・0行 | 成功・0行 | 成功・0行 | 成功・0行 |
 
-Trigger経由のPipeline結果は次の表に記録します。
+Trigger経由のPipeline結果は次のとおりです。
 
 | 投入したCSV | 拒否した層 | Pipelineの結果 | 出力先 |
 |---|---|---|---|
-| `orders_v2.csv` | 未記録 | 未記録 | 未記録 |
-| `orders_missing_required.csv` | 未記録 | 未記録 | 未記録 |
-| `orders_amount_type_change.csv` | 未記録 | 未記録 | 未記録 |
+| `orders_v2.csv` | 拒否なし（Functionが受け入れ、StrictなData Flowが追加列を除いて処理） | 成功 | `validated`と`output` |
+| `orders_missing_required.csv` | Function（`missing required column: customer_id`） | 成功 | `rejected`に原本と検証結果JSON |
+| `orders_amount_type_change.csv` | Function（`amount must be a plain decimal`が2行） | 成功 | `rejected`に原本と検証結果JSON |
 
-## 4. 推論と受け入れは別の判断
+## 4. 分かったこと
 
-`Infer drifted column types`は、届いた値から型を推測する機能です。推測できたからといって、その列を出力に含めてよいか、下流が新しい列や型を扱えるかは決まりません。受け入れるかどうかは、Functionの検証規則とData Flowの設定という、別々の場所で決めています。
-
-この節は、比較結果をもとに、どの変化をどの層で受け入れ、どの変化を拒否したかを書き足します。
+- **Strictは追加列では失敗しません。** `validateSchema: true`が失敗させるのは、宣言した列が入力にないときだけでした。追加列はStrictでもTolerantでも出力に含まれず、予想（Strictは宣言と異なる入力で失敗する）は列の欠落にだけ当てはまりました。このため、Functionが受け入れる追加列入りのCSVが、Data Flowでシステム障害になる心配はありません。
+- **Tolerantは問題を隠します。** 必須列が欠けても失敗せず、0行の成功になります。`amount`が数値でない場合は、Strictでも変換結果がnullになり、行が静かに除かれて0行の成功になります。Data Flowだけでは、入力の不備と「該当する行がない」を区別できません。
+- **Driftは列を通すだけです。** 宣言外の列は、出力の列名ルールを置いた場合にだけstringのまま出力に残ります。`Infer drifted column types`を加えても、previewでは出力に違いが出ませんでした。推論された型を確かめるには、型を持つsinkの出力か、スキーマを確認できる別の手段が必要です。
+- **推論と受け入れは別の判断です。** 列を推論できても、その列を出力に含めるか、下流が受け取れるかは、列名のルールとsinkの設定が決めます。必須列の欠落と型の不正を拒否しているのは、Data Flowではなく、Pipeline上で先に動く入力検証Functionです。Data Flowを緩めても厳しくしても、この2つはFunctionが止めます。
