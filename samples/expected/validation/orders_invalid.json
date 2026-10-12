@@ -1,0 +1,31 @@
+{
+  "status": "INVALID",
+  "errorCount": 5,
+  "errors": [
+    {
+      "row": 2,
+      "column": "amount",
+      "message": "amount must be >= 0"
+    },
+    {
+      "row": 3,
+      "column": "customer_id",
+      "message": "customer_id must not be blank"
+    },
+    {
+      "row": 4,
+      "column": "amount",
+      "message": "amount must be a plain decimal"
+    },
+    {
+      "row": 4,
+      "column": "currency",
+      "message": "currency must be JPY"
+    },
+    {
+      "row": 4,
+      "column": "ordered_at",
+      "message": "ordered_at must be a valid ISO 8601 datetime"
+    }
+  ]
+}

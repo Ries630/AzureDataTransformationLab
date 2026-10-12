@@ -24,6 +24,8 @@
 | [0008](0008-adf-function-auth-with-host-key.md) | ADFからFunctionへの呼び出しにFunctionキーを使う | 承認済み |
 | [0009](0009-manage-adf-definitions-in-terraform.md) | ADFのPipeline・Dataset・Data FlowをTerraformで管理する | 承認済み |
 | [0010](0010-require-function-applied-before-data-factory.md) | Data Factory有効化の前にFunction Appを適用済みにする | 承認済み |
+| [0011](0011-coordinate-input-attempts-in-dynamodb.md) | DynamoDBで入力世代と処理attemptを制御する | 承認済み |
+| [0012](0012-use-glue-spark-for-schema-evolution.md) | スキーマ変化の比較にGlue Sparkを使う | 承認済み |
 
 ## テンプレート
 

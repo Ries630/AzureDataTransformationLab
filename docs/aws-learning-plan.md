@@ -1,6 +1,6 @@
 # AWS版の実装と会社学習環境への持ち込み計画
 
-ステータス: Issue化済み。実装・実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
+ステータス: AWS 0の確認キットは[PR #44](https://github.com/Ries630/AzureDataTransformationLab/pull/44)で準備、AWS 1の契約と比較基準を整理済み。会社での実機操作は未着手。全体は[親Issue #30](https://github.com/Ries630/AzureDataTransformationLab/issues/30)、進捗は[AWS milestone](https://github.com/Ries630/AzureDataTransformationLab/milestone/2)で管理する。会社環境での構築完了を優先し、Azure Phase 5〜7と比較・学習は構築の後に行う。
 
 | 段階 | Issue |
 |---|---|
@@ -55,7 +55,7 @@ Codexは会社のAWSと会社PCに接続できない。次の作業はりーす�
 
 | 時期 | 作業 |
 |---|---|
-| 今すぐ | この計画の承認。AWS 1の詳細計画の承認 |
+| 承認済み | この計画とAWS 1の詳細計画 |
 | AWS 1〜2と並行 | 確認キットを会社へ持ち込んで実行し、秘密情報を除いた結果を共有する。不足する権限やstate保存先を管理者へ依頼する |
 | 各段階 | AWS 2・3の詳細計画の承認。各PRのマージ |
 | AWS 3の後 | 許可された方法でZIPを会社へ転送する |
@@ -96,7 +96,7 @@ aws sts get-caller-identity
 
 着手条件はこの段階の実装計画の承認とする。Azure Phase 5〜7の完了は待たない。Terraform・AWS CLIの利用とファイル転送を前提に進め、AWS 0の環境値と実行権限は配置前に確認する。
 
-既存の`functions/validator/validation.py`の`validate_csv(content, filename)`とサンプル・純粋テストを再利用する。検証規則の正は[CSV検証規則](architecture.md#csv検証規則)に保ち、共通コードは一か所で管理してAzure用とLambda用の配置物に同梱する。共通コードの取り出しに伴うAzureのimport・パッケージ構築への変更を、この段階の検証範囲に含める。
+既存の`functions/validator/validation.py`の`validate_csv(content, filename)`とサンプル・純粋テストを再利用する。検証規則の正は[CSV検証規則](architecture.md#csv検証規則)に保つ。共通コードは既存の一か所で管理し、Lambda ZIP生成時にコピーするため、Azureのimport・配置は変更しない。固定入力の派生期待値は[samples/expected](../samples/expected/README.md)、共通の[比較基準](architecture.md#比較基準)とAWS固有の[AWS処理契約](aws-architecture.md)を参照する。
 
 Azure固有のHTTP入口、Managed Identity、Blob読み取り、配置用ディレクトリは、Lambda入口、実行ロール、S3読み取り、Lambda ZIPへ置き換える。Pythonの対象バージョンとCPUはAWSの対応環境から選び、bundleに記録する。会社固有の制約が判明した場合は配置物を再生成する。Azureの実行環境をそのまま引き継がない。
 

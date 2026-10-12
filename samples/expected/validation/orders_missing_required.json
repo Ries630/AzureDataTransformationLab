@@ -1,0 +1,11 @@
+{
+  "status": "INVALID",
+  "errorCount": 1,
+  "errors": [
+    {
+      "row": 1,
+      "column": "customer_id",
+      "message": "missing required column: customer_id"
+    }
+  ]
+}
