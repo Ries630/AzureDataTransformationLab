@@ -1,0 +1,43 @@
+source(output(
+    order_id as string,
+    customer_id as string,
+    amount as string,
+    currency as string,
+    ordered_at as string
+  ),
+  allowSchemaDrift: true,
+  validateSchema: false,
+  inferDriftedColumnTypes: true,
+  ignoreNoFilesFound: false) ~> source1
+
+source1 derive(
+    orderId = order_id,
+    customerId = customer_id,
+    amount = toDecimal(amount, 18, 4),
+    orderedAt = coalesce(
+      toTimestamp(ordered_at, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"),
+      toTimestamp(ordered_at, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+      toTimestamp(ordered_at, "yyyy-MM-dd'T'HH:mm:ss.SSS"),
+      toTimestamp(ordered_at, "yyyy-MM-dd'T'HH:mm:ss")
+    ),
+    taxIncludedAmount = toDecimal(amount, 18, 4) * toDecimal('1.1', 10, 1)
+  ) ~> ConvertTypes
+
+ConvertTypes filter(
+    !isNull(orderId) && !isNull(customerId) && !isNull(amount) && !isNull(orderedAt)
+  ) ~> DropInvalidRows
+
+DropInvalidRows select(mapColumn(
+    each(match(!in(['order_id', 'customer_id', 'ordered_at'], name)))
+  ),
+  skipDuplicateMapInputs: true,
+  skipDuplicateMapOutputs: true) ~> DropSourceNames
+
+DropSourceNames sink(
+  allowSchemaDrift: true,
+  validateSchema: false,
+  umask: 0022,
+  preCommands: [],
+  postCommands: [],
+  skipDuplicateMapInputs: true,
+  skipDuplicateMapOutputs: true) ~> sink1

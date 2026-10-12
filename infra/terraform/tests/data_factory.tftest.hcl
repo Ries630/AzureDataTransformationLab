@@ -33,9 +33,10 @@ run "data_factory_disabled_by_default" {
   command = plan
 
   # phase3.auto.tfvarsがdata_factory_enabled=trueを設定するため、
-  # このrunでは明示的に無効を指定する。
+  # このrunでは明示的に無効を指定する。phase4.auto.tfvarsの比較用Data Flowも同様に無効にする。
   variables {
-    data_factory_enabled = false
+    data_factory_enabled         = false
+    schema_evolution_lab_enabled = false
   }
 
   override_data {
@@ -54,6 +55,11 @@ run "data_factory_disabled_by_default" {
     condition     = length(azurerm_data_factory_linked_service_azure_function.validator) == 0 && length(data.azurerm_function_app_host_keys.validator) == 0
     error_message = "Data Factory無効時にFunctionキーを読み取ってはいけません。"
   }
+
+  assert {
+    condition     = length(azurerm_data_factory_data_flow.schema_evolution) == 0
+    error_message = "Data Factory無効時にSchema Evolution比較用Data Flowを作成してはいけません。"
+  }
 }
 
 run "data_factory_adds_scoped_pipeline" {
@@ -62,6 +68,8 @@ run "data_factory_adds_scoped_pipeline" {
   variables {
     functions_enabled    = true
     data_factory_enabled = true
+    # 開発端末のphase4.auto.tfvarsに左右されないよう、比較用Data Flowは明示的に無効にする。
+    schema_evolution_lab_enabled = false
   }
 
   override_resource {
@@ -110,4 +118,49 @@ run "data_factory_adds_scoped_pipeline" {
     condition     = azurerm_data_factory_linked_service_azure_function.validator[0].url == "https://func-adtlteststorage.azurewebsites.net"
     error_message = "Function Linked Serviceは検証Function AppのURLを指さなければなりません。"
   }
+
+  assert {
+    condition     = length(azurerm_data_factory_data_flow.schema_evolution) == 0
+    error_message = "schema_evolution_lab_enabledが無効の場合、比較用Data Flowを作成してはいけません。"
+  }
+}
+
+run "schema_evolution_lab_adds_comparison_data_flows" {
+  command = plan
+
+  variables {
+    functions_enabled            = true
+    data_factory_enabled         = true
+    schema_evolution_lab_enabled = true
+  }
+
+  override_data {
+    target = data.azurerm_subscription.current
+    values = {
+      display_name = "Personal-Sandbox"
+    }
+  }
+
+  assert {
+    condition     = toset(keys(azurerm_data_factory_data_flow.schema_evolution)) == toset(["df_schema_tolerant", "df_schema_drift", "df_schema_drift_infer"])
+    error_message = "比較用にTolerant・Drift・Drift＋型推論の3つのData Flowを作成しなければなりません。"
+  }
+}
+
+run "schema_evolution_lab_requires_data_factory" {
+  command = plan
+
+  variables {
+    data_factory_enabled         = false
+    schema_evolution_lab_enabled = true
+  }
+
+  override_data {
+    target = data.azurerm_subscription.current
+    values = {
+      display_name = "Personal-Sandbox"
+    }
+  }
+
+  expect_failures = [var.schema_evolution_lab_enabled]
 }

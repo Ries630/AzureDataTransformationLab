@@ -122,6 +122,18 @@ variable "data_factory_enabled" {
   nullable    = false
 }
 
+variable "schema_evolution_lab_enabled" {
+  description = "Phase 4のSchema Evolution比較用Data Flow（Tolerant・Drift・Drift＋型推論）を作成する。Data Factory基盤（data_factory_enabled）の有効化が前提。"
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.schema_evolution_lab_enabled || var.data_factory_enabled
+    error_message = "schema_evolution_lab_enabledはData Factory基盤（data_factory_enabled）を有効にしてから指定してください。"
+  }
+}
+
 variable "data_factory_name" {
   description = "Data Factory名。省略時はstorage_account_nameから導出する。"
   type        = string

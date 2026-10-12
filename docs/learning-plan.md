@@ -571,19 +571,79 @@ VALIDのCSVを1本処理するたびにData Flowのクラスターが起動し�
 
 ## Phase 4: Schema Evolution
 
-Mapping Data Flowで次を試す。
+列と型が変わったCSVに対して、どの層で何を検出し、何を受け入れるかを比較する。読み方と比較結果は[Phase 4の解説](tutorials/phase-4-schema-evolution.md)に置く。
 
-- 列追加
-- 列削除
-- 型変更
-- 未知の列
-- Strict schemaとTolerant schema
-- `Allow schema drift`
-- `Infer drifted column types`
+Strictの比較対象は本番の`df_transform_orders`（`allowSchemaDrift: false`・`validateSchema: true`）とし、変更しない。比較用に次の3つのData Flowを`schema_evolution_lab_enabled`で追加する。Pipeline・Triggerからは参照しない。
 
-Mapping Data FlowのDebugは検証直前に有効化し、終了後すぐ無効化する。
+| Data Flow | 設定 | 確かめること |
+|---|---|---|
+| `df_transform_orders` | Strict | 宣言と異なる入力で失敗するか |
+| `df_schema_tolerant` | `validateSchema: false` | 宣言外の列が無視されるか |
+| `df_schema_drift` | `Allow schema drift`、列名のルールで出力へ通す | 宣言外の列がstringのまま出力に残るか |
+| `df_schema_drift_infer` | 上記＋`Infer drifted column types` | 宣言外の列の型が値から推論されるか |
 
-完了条件は、許容する変更と拒否する変更の挙動を説明できることである。
+比較には[サンプルデータ](#サンプルデータ)のschema-evolutionの5本と`orders_v1.csv`を使う。Functionが各サンプルを受け入れるか拒否するかは`tests/validator/test_schema_evolution_samples.py`で確認する。
+
+### 1. 比較用Data Flowをplanで確認する
+
+```bash
+# phase4.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
+(
+set -eu
+umask 077
+set -o noclobber
+printf '%s\n' 'schema_evolution_lab_enabled = true' > infra/terraform/phase4.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase4.tfplan
+terraform -chdir=infra/terraform show -no-color phase4.tfplan
+)
+```
+
+planでは、Data Flow 3つの追加だけで、既存のPipeline・Trigger・`df_transform_orders`に差分がないことを照合する。Data Flowの定義自体には費用がかからない。既存リソースに差分が出る場合、その差分はPhase 4の変更によるものではない。`-target='azurerm_data_factory_data_flow.schema_evolution'`で比較用Data Flowだけのplanを作り直して適用し、既存の差分は別に扱う。
+
+### 2. 比較用の入力を配置する
+
+比較用のCSVは`validated/schema-lab/input/`に置く。`landing`に置くとTriggerがPipelineを起動するためである。ADFのManaged Identityは`validated`を読み書きできる。
+
+```bash
+for sample in samples/valid/orders_v1.csv samples/schema-evolution/*.csv; do
+  az storage fs file upload --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+    --account-name "${LAB_STORAGE_ACCOUNT:?}" --auth-mode login \
+    --file-system validated --path "schema-lab/input/${sample##*/}" --source "$sample"
+done
+```
+
+### 3. Debugで設定とサンプルの組み合わせを比較する
+
+Mapping Data FlowのDebugは検証直前に有効化し、終了後すぐ無効化する。Debug中は8 vCoreのクラスターが稼働し、General Purposeのjapaneastの従量単価（2026-10-12時点で1 vCore時間あたり0.30225 USD）で1時間あたり約2.42 USDかかる。1セッションで4つのData Flowと6本のサンプルをまとめて確認し、目安を1時間以内とする。
+
+1. ADF Studioで`Data flow debug`を有効にし、IRに`ir-<storage_account_name>`を選ぶ。
+2. 各Data Flowの`Debug Settings`で、source1のパラメーターを`fileSystem=validated`、`folderPath=schema-lab/input`、`fileName=<サンプル名>`にする。sink1は`fileSystem=validated`、`folderPath=schema-lab/output`、`fileName`を空欄にする。Data Previewではsinkへ書き込まない。
+3. sourceと最後の変換の`Data preview`と`Inspect`で、失敗の有無、列の一覧と型、行数を記録する。
+4. 終了後すぐ`Data flow debug`を無効にする。
+
+ADF Studioで設定を編集した場合は発行（Publish）しない。比較する設定の正はTerraformの定義とする。
+
+### 4. Pipeline全体で拒否した層を確認する
+
+`orders_v2.csv`、`orders_missing_required.csv`、`orders_amount_type_change.csv`の3本を`landing`へ投入し、Pipeline結果と出力先を確認する。Data Flowまで進むのは、Functionが受け入れる`orders_v2.csv`だけである。
+
+| 投入するCSV | 確認すること |
+|---|---|
+| `orders_v2.csv` | Functionが受け入れた後、本番のStrictなData Flowが成功するか失敗するか |
+| `orders_missing_required.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONが作られる |
+| `orders_amount_type_change.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONが作られる |
+
+`orders_v2.csv`がPipeline失敗になる場合は、Functionの契約（追加列を許容）とData Flowの設定の不一致として結果に記録し、修正は別Issueで扱う。
+
+### 5. 後片付けする
+
+`phase4.auto.tfvars`を`schema_evolution_lab_enabled = false`にしてplanを作り、Data Flow 3つの削除だけであることを確認してから適用する。`validated/schema-lab/`と比較の出力も削除する。
+
+### Phase 4の完了条件
+
+- 4つの設定とサンプルの組み合わせで、失敗・列の無視・列の通過を比較表で説明できる。`Infer drifted column types`による推論された型は、Debugのpreviewでは判別できなかったことを記録している。
+- 必須列の欠落と型変更を、Pipeline上のどの層で拒否したかを説明できる。
+- スキーマの推論と変更の受け入れが別の判断であることを、比較結果をもとに説明できる。
 
 ## Phase 5: Monitoring
 
@@ -628,7 +688,10 @@ Functionコードの発行はTerraformから分離してよい。
 | 不正な入力 | [`samples/invalid/orders_invalid.csv`](../samples/invalid/orders_invalid.csv) |
 | 列追加 | [`samples/schema-evolution/orders_v2.csv`](../samples/schema-evolution/orders_v2.csv) |
 | 追加の列変更 | [`samples/schema-evolution/orders_v3.csv`](../samples/schema-evolution/orders_v3.csv) |
+| 型推論の確認 | [`samples/schema-evolution/orders_drifted_types.csv`](../samples/schema-evolution/orders_drifted_types.csv) |
+| 必須列の欠落 | [`samples/schema-evolution/orders_missing_required.csv`](../samples/schema-evolution/orders_missing_required.csv) |
+| `amount`の型変更 | [`samples/schema-evolution/orders_amount_type_change.csv`](../samples/schema-evolution/orders_amount_type_change.csv) |
 
 Schema Evolutionでは、新しい列を通す、無視する、Validation Errorにする場合を比較する。
 
-必須列の削除と`amount`の型変更も追加し、スキーマ検出と変更受け入れが別の判断であることを確認する。
+必須列の欠落と`amount`の型変更では、スキーマ検出と変更受け入れが別の判断であることを確認する。
