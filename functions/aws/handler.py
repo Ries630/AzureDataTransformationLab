@@ -719,6 +719,8 @@ def _log_operation(operation, event, result, code):
     state = _mapping(event.get("state"))
     source = result if isinstance(result, dict) and "input" in result else state
     attempt = _mapping(source.get("attempt"))
+    transform = _mapping(source.get("transform"))
+    glue_result = _mapping(source.get("glueResult"))
     record = {
         "operation": operation if isinstance(operation, str) else None,
         "outcome": "error" if code else "ok",
@@ -728,7 +730,9 @@ def _log_operation(operation, event, result, code):
         "executionArn": attempt.get("executionArn")
         or event.get("executionArn")
         or state.get("executionArn"),
-        "jobRunId": _mapping(source.get("transform")).get("jobRunId"),
+        "jobRunId": transform.get("jobRunId")
+        or glue_result.get("JobRunId")
+        or glue_result.get("JobRunID"),
     }
     print(
         json.dumps(
