@@ -424,6 +424,54 @@ class RetryReviewTests(unittest.TestCase):
                     with self.assertRaises(expected):
                         module.handler({"operation": operation, "state": {}}, None)
 
+    def test_handler_logs_identifiers_and_error_code_without_content(self):
+        """操作ごとに識別子と結果codeだけを1行のJSONで記録する。"""
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+
+        env = dict(
+            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
+        )
+        state = {
+            "input": {"bucket": "bucket", "key": "landing/a.csv", "etag": "e", "inputId": "i" * 64},
+            "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
+            "transform": {"jobRunId": "jr_1"},
+            "csv": "order_id,secret-content",
+        }
+        with (
+            patch.dict(module.os.environ, env),
+            patch.object(module.boto3, "client"),
+            patch.object(module.boto3, "resource"),
+            patch.object(module, "Pipeline") as pipeline,
+        ):
+            pipeline.return_value.publish.return_value = state
+            pipeline.return_value.release.side_effect = module.ContractError(
+                "SERVICES_STILL_RUNNING"
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.handler({"operation": "publish", "state": state}, None)
+                with self.assertRaises(module.ContractError):
+                    module.handler({"operation": "release", "state": state}, None)
+        success, failure = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            success,
+            {
+                "operation": "publish",
+                "outcome": "ok",
+                "inputId": "i" * 64,
+                "attemptId": "attempt",
+                "executionArn": "arn:execution",
+                "jobRunId": "jr_1",
+            },
+        )
+        self.assertEqual(failure["outcome"], "error")
+        self.assertEqual(failure["code"], "SERVICES_STILL_RUNNING")
+        self.assertNotIn("secret-content", output.getvalue())
+        self.assertNotIn("landing/a.csv", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
