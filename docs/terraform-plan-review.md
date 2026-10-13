@@ -90,8 +90,9 @@ custom roleの定義とassignable scopeはlab Resource Groupに置き、assignme
 - Functions：`functions_enabled: true`、`function_app_name`、`function_plan_name`、`function_storage_account_name`、`function_identity_name`
 - Data Factoryを含める場合：`data_factory_enabled: true`。名前が既定と異なる場合は`data_factory_name`と`data_factory_ir_name`も指定する
 - Phase 4の比較用Data Flowを作成している間：`schema_evolution_lab_enabled: true`。`data_factory_enabled`が前提で、後片付けでData Flowを削除したら外す
+- Phase 5の監視を作成している間：`monitoring_enabled: true`と`monitoring_notification_email`。Budgetも作成している場合は`budget_enabled: true`と、作成時と同じ`monitoring_budget_start_date`を指定する
 
-`functions_enabled`、`data_factory_enabled`、`schema_evolution_lab_enabled`のうち実環境で有効なものがsecretにない場合はTerraformの既定値`false`が使われ、既存のFunction AppやData Factoryを削除するplanが出る。そのplanは適用せず、secretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
+`functions_enabled`、`data_factory_enabled`、`schema_evolution_lab_enabled`、`monitoring_enabled`、`budget_enabled`のうち実環境で有効なものがsecretにない場合はTerraformの既定値`false`が使われ、既存のFunction AppやData Factoryを削除するplanが出る。そのplanは適用せず、secretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
 
 再開は次の順序で行う。
 
@@ -101,6 +102,20 @@ custom roleの定義とassignable scopeはlab Resource Groupに置き、assignme
 4. `TERRAFORM_INPUTS`、backend、OIDC Environment、CI Identityの権限を照合してからworkflowを再有効化し、承認付きEnvironmentのPR planと公開コメントを確認する。
 
 後片付けでCIのlab接続を解除するときは、`infra/ci-plan`の`lab_access_enabled = false`を保存してplanする。これにより、`functions_access_enabled = true`を保持したまま、現存するFunctions用の2リソースとlab向け旧2リソースが連動して解除される。復旧時は同じ入力の`functions_access_enabled = true`を維持して`lab_access_enabled = true`へ戻し、実リソースと名前を再照合してから権限を再作成する。workflow再開時の`TERRAFORM_INPUTS`にもFunctionsを使う実値を保持し、Storageだけを再構築するplanでは明示的に`functions_enabled = false`を指定する。
+
+### Budgetをrefresh対象へ追加する
+
+Phase 5のBudgetはResource GroupではなくSubscriptionに作られるため、lab Resource GroupへのReaderでは読み取れない。CIのBudget用権限は、`infra/ci-plan`の`budget_access_enabled`が`true`かつ`lab_access_enabled`が`true`のときだけ作成する。既定値は`false`である。
+
+追加される権限リソースは、custom roleと、そのroleのassignmentの2つである。custom roleの定義、assignable scope、assignmentのscopeはいずれもplan対象のSubscriptionで、Actionは`Microsoft.Consumption/budgets/read`だけである。Subscription全体の`Reader`は付与しない。
+
+追加の順序は次のとおりである。
+
+1. `infra/ci-plan`の最終入力に`budget_access_enabled = true`を加えて権限planを作り、Budget用の2リソースだけが追加対象であることを確認する。承認を受けて適用し、再planで差分がないことを確認する。
+2. `TERRAFORM_INPUTS`に、[前節](#functionsを含むciの再開)のPhase 5の値を反映する。通知先のメールアドレスは機密値として扱い、公開用Markdownには出力されない。
+3. PRのplanで、監視とBudgetのリソースに差分がないことを確認する。
+
+後片付けで`lab_access_enabled = false`にすると、`budget_access_enabled = true`を保持したまま、Budget用の2リソースも解除される。
 
 ## GitHub Environment
 

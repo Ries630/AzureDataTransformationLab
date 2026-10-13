@@ -126,9 +126,14 @@ terraform -chdir=infra/terraform state pull \
 | 確認すること | 期待する結果 |
 |---|---|
 | Resource Group | `az group exists`が`false` |
+| Budget（Phase 5で作成した場合） | 破棄前に`monitoring_budget_name`のoutputで控えた名前が、`az consumption budget list`の結果にない |
 | 学習用stateの管理対象 | 最後の照合が`true`で、終了コードが0 |
 | CI用root | 再planが差分なし |
 | 保持するもの | state、過去バージョン、保護設定、CI Identityが残っている |
+
+BudgetはResource GroupではなくSubscriptionに作られるため、Resource Groupの削除だけでは確認できない。破棄planに含まれていることを承認前に照合し、削除後も個別に確かめる。
+
+Log Analytics workspaceは、削除後も一定期間は論理削除の状態で残る。その期間内に同じ名前で再構築すると、削除前のworkspaceが復元される。
 
 stateの照合で`state list`の出力が空かどうかを見ないのは、data sourceも一覧に出るためである。代わりに`mode == "managed"`の実体の数を数える。
 

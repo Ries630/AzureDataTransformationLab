@@ -299,7 +299,35 @@ Functionが判定を正常に返し、`rejected`への配置にも成功した�
 - Timeout
 - Managed IdentityやRBACの設定不備
 
-Azure Monitor AlertとAction Groupによるメール通知の対象は、システム障害だけである。業務Rejectのたびに通知すると、データ提供側の誤りの通知に、本当の障害の通知が埋もれるためである。
+Azure Monitor AlertとAction Groupによるメール通知の対象は、システム障害だけである（[監視と通知](#監視と通知)）。業務Rejectのたびに通知すると、データ提供側の誤りの通知に、本当の障害の通知が埋もれるためである。
+
+## 監視と通知
+
+監視の構成要素は、Terraformの`monitoring_enabled`と`budget_enabled`で作成する。手順は[学習計画のPhase 5](learning-plan.md#phase-5-monitoring)にある。
+
+| 対象 | 仕組み | 記録・通知する内容 |
+|---|---|---|
+| Function | Application Insights（Log Analytics workspaceへ保存） | HTTP応答ごとの構造化ログ |
+| Pipeline | ADFの診断設定 | `PipelineRuns`、`ActivityRuns`、`TriggerRuns`のログ |
+| システム障害 | Metric AlertとAction Group | `pl-csv-ingestion`の`PipelineFailedRuns`が1件以上でメール |
+| 費用 | Subscriptionの月次Budget | `Personal-Sandbox`全体の実績が1,000円の80%・100%に達したらメール |
+
+Functionは応答ごとに、次の項目だけを持つJSONを1行記録する。HTTP 5xxはError、それ以外はInformationのレベルで記録する。
+
+| 項目 | 内容 |
+|---|---|
+| `event` | `csv_validation`に固定 |
+| `http_status` | 応答のHTTPステータス |
+| `outcome` | 検証結果の`status`（`VALID`・`INVALID`）、またはエラーの`code` |
+| `pipeline_run_id` | ADFが`x-adf-pipeline-run-id`ヘッダーで渡したPipelineの実行ID。UUIDの形式に合わない場合は記録しない |
+
+入力のパス、CSVの値、例外の本文はログに含めない。パスやCSVの値は業務データであり、SDKの例外本文にはURLや認証情報が含まれ得るためである。ADFのログとの関連付けには`pipeline_run_id`を使う。
+
+FunctionからApplication Insightsへの送信はEntra ID認証とし、Log AnalyticsとApplication Insightsのローカル認証は無効にする。送信には、FunctionのUser Assigned Managed Identityに付与した`Monitoring Metrics Publisher`を使う。
+
+障害通知は、Pipelineの失敗を数えるメトリックで判定する。業務RejectではPipelineが正常終了するため、[業務Rejectとシステム障害](#業務rejectとシステム障害)の区別がそのまま通知の有無になる。Functionが呼ばれる前に失敗した場合も、Pipelineが失敗すれば通知される。
+
+Budgetは超過を通知するだけで、リソースを停止しない。費用データの反映には遅れがあるため、Budgetは急な費用増加をすぐに止める手段にはならない。
 
 ## 冪等性
 

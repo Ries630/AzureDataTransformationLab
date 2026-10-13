@@ -415,7 +415,7 @@ Pipeline、Dataset、Data Flow、Triggerは、すべてTerraformで管理して�
 
 `activities_json`の中にあるLinked Service、Dataset、Data Flowへの参照は名前の文字列だけなので、Terraformはこれらの依存関係を自動では把握できません。そのため`data_factory.tf`では、Pipelineリソースの`depends_on`で作成順序を明示しています。
 
-planでは、[学習計画の手順](../learning-plan.md#2-data-factory基盤をplanで確認する)に沿って、対象のSubscription、Data Factory、IR、権限の範囲、Triggerの対象範囲、費用を確認します。費用の大部分はData Flowの実行で、クラスターの起動を含めて1回あたり数十円程度を見込みます。正確な金額はplanを提示するときに公式料金から計算します。予算の上限で自動停止する仕組み（BudgetとCost Alert）はPhase 5で作るため、この段階ではまだありません。
+planでは、[学習計画の手順](../learning-plan.md#2-data-factory基盤をplanで確認する)に沿って、対象のSubscription、Data Factory、IR、権限の範囲、Triggerの対象範囲、費用を確認します。費用の大部分はData Flowの実行で、クラスターの起動を含めて1回あたり数十円程度を見込みます。正確な金額はplanを提示するときに公式料金から計算します。予算に近づいたことをメールで知らせるBudgetはPhase 5で作るため、この段階ではまだありません。Budgetは通知するだけで、リソースを自動では停止しません。
 
 ## 理解度チェック
 
