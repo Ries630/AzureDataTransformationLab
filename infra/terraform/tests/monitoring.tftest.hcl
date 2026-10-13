@@ -69,6 +69,11 @@ run "monitoring_disabled_preserves_existing_configuration" {
     condition     = length(azurerm_log_analytics_workspace.lab) == 0 && length(azurerm_application_insights.lab) == 0 && length(azurerm_monitor_diagnostic_setting.data_factory) == 0 && length(azurerm_monitor_action_group.pipeline_failure) == 0 && length(azurerm_monitor_metric_alert.pipeline_failure) == 0
     error_message = "監視無効時に監視リソースを作成してはいけません。"
   }
+
+  assert {
+    condition     = length(azurerm_log_analytics_workspace_table.application_insights) == 0
+    error_message = "監視無効時にApplication Insights用のLog Analytics tableを作成してはいけません。"
+  }
 }
 
 run "monitoring_configures_diagnostics_identity_and_failure_alert" {
@@ -105,6 +110,17 @@ run "monitoring_configures_diagnostics_identity_and_failure_alert" {
   assert {
     condition     = azurerm_application_insights.lab[0].workspace_id == azurerm_log_analytics_workspace.lab[0].id && azurerm_application_insights.lab[0].retention_in_days == 30 && !azurerm_application_insights.lab[0].local_authentication_enabled
     error_message = "Application Insightsはworkspace型・providerが受け付ける30日保持・local authentication無効でなければなりません。"
+  }
+
+  assert {
+    condition = toset([for table in values(azurerm_log_analytics_workspace_table.application_insights) : table.name]) == toset([
+      "AppAvailabilityResults", "AppBrowserTimings", "AppDependencies", "AppEvents", "AppExceptions", "AppMetrics",
+      "AppPageViews", "AppPerformanceCounters", "AppRequests", "AppSystemEvents", "AppTraces", "AppGenAIContent",
+    ]) && alltrue([for table in values(azurerm_log_analytics_workspace_table.application_insights) :
+      table.workspace_id == azurerm_log_analytics_workspace.lab[0].id && table.plan == "Analytics" &&
+      table.retention_in_days == 31 && table.total_retention_in_days == 31
+    ])
+    error_message = "Application Insightsの12 tableは指定workspaceのAnalytics planで保持期間を31日に設定しなければなりません。"
   }
 
   assert {
