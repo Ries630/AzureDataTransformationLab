@@ -64,6 +64,53 @@ run "restrict_identity_and_roles" {
     condition     = length(azurerm_role_definition.function_app_config_list_reader) == 0 && length(azurerm_role_assignment.function_app_config_list_reader) == 0
     error_message = "Functions接続を明示的に有効化していない場合は、追加のrefresh権限を作成してはいけません。"
   }
+  assert {
+    condition     = length(azurerm_role_definition.budget_reader) == 0 && length(azurerm_role_assignment.budget_reader) == 0
+    error_message = "Budget接続を有効化していない場合は、追加の読み取り権限を作成してはいけません。"
+  }
+}
+
+run "budget_refresh_grants_only_budget_read" {
+  command = plan
+  override_resource {
+    target          = azurerm_user_assigned_identity.plan
+    override_during = plan
+    values = {
+      id           = "/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-example-state/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-adtl-terraform-plan"
+      principal_id = "22222222-2222-4222-8222-222222222222"
+    }
+  }
+  variables {
+    budget_access_enabled = true
+  }
+  override_data {
+    target = data.azurerm_subscription.current
+    values = { display_name = "Personal-Sandbox" }
+  }
+  assert {
+    condition = (
+      toset(one(azurerm_role_definition.budget_reader[0].permissions).actions) == toset(["Microsoft.Consumption/budgets/read"]) &&
+      azurerm_role_assignment.budget_reader[0].scope == local.subscription_scope &&
+      azurerm_role_assignment.budget_reader[0].principal_id == azurerm_user_assigned_identity.plan.principal_id
+    )
+    error_message = "CIには対象SubscriptionのBudget読み取りだけを追加する必要があります。"
+  }
+}
+
+run "detach_disables_budget_refresh" {
+  command = plan
+  variables {
+    lab_access_enabled    = false
+    budget_access_enabled = true
+  }
+  override_data {
+    target = data.azurerm_subscription.current
+    values = { display_name = "Personal-Sandbox" }
+  }
+  assert {
+    condition     = length(azurerm_role_definition.budget_reader) == 0 && length(azurerm_role_assignment.budget_reader) == 0
+    error_message = "学習環境への接続を解除した場合はBudget読み取り権限も外す必要があります。"
+  }
 }
 
 run "enable_functions_refresh_with_derived_names" {

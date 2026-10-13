@@ -97,12 +97,16 @@ test('監視用の機密入力をTerraformへ渡し、作業ファイルを後�
   const input = JSON.parse(f.env.TERRAFORM_INPUTS);
   input.monitoring_enabled = true;
   input.monitoring_notification_email = 'learner@example.com';
+  input.budget_enabled = true;
+  input.monitoring_budget_start_date = '2026-10-01T00:00:00Z';
   f.env.TERRAFORM_INPUTS = JSON.stringify(input);
   const run = f.run;
   f.run = (program, args) => {
     const privateInput = JSON.parse(readFileSync(join(f.root, 'ci.auto.tfvars.json'), 'utf8'));
     assert.equal(privateInput.monitoring_enabled, true);
     assert.equal(privateInput.monitoring_notification_email, 'learner@example.com');
+    assert.equal(privateInput.budget_enabled, true);
+    assert.equal(privateInput.monitoring_budget_start_date, '2026-10-01T00:00:00Z');
     return run(program, args);
   };
   runPlan(f);

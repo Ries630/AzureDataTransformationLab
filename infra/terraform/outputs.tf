@@ -72,3 +72,8 @@ output "monitoring_pipeline_failure_alert_name" {
   description = "Pipeline失敗Metric Alert名。"
   value       = var.monitoring_enabled ? azurerm_monitor_metric_alert.pipeline_failure[0].name : null
 }
+
+output "monitoring_budget_name" {
+  description = "Budget有効時に作成したSubscription月次Budget名。"
+  value       = var.budget_enabled ? azurerm_consumption_budget_subscription.monthly[0].name : null
+}

@@ -47,6 +47,13 @@ variable "functions_access_enabled" {
   nullable    = false
 }
 
+variable "budget_access_enabled" {
+  description = "Subscription BudgetをCI planの読み取り対象にする。"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "function_app_name" {
   description = "既存のFlex Consumption Function App名。省略時はlab_storage_account_nameから導出する。"
   type        = string

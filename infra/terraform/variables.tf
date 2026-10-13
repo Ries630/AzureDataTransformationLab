@@ -147,6 +147,42 @@ variable "monitoring_notification_email" {
   }
 }
 
+variable "budget_enabled" {
+  description = "Personal-Sandbox Subscription全体の月次Cost Budgetを作成する。"
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.budget_enabled || var.monitoring_enabled
+    error_message = "budget_enabledはmonitoring_enabledを有効にしてから指定してください。"
+  }
+}
+
+variable "monitoring_budget_start_date" {
+  description = "Budget期間の開始月の初日をUTCの固定値で指定する。既存Budgetの開始月は維持する。"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.monitoring_budget_start_date == null || (
+      can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.monitoring_budget_start_date)) &&
+      can(formatdate("YYYY-MM", var.monitoring_budget_start_date))
+    )
+    error_message = "monitoring_budget_start_dateはYYYY-MM-01T00:00:00Z形式で指定してください。"
+  }
+
+  validation {
+    condition = !var.budget_enabled || (
+      var.monitoring_budget_start_date != null &&
+      can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.monitoring_budget_start_date)) &&
+      can(formatdate("YYYY-MM", var.monitoring_budget_start_date))
+    )
+    error_message = "Budget有効時は開始月の初日のUTC日時をmonitoring_budget_start_dateに明示してください。"
+  }
+}
+
 variable "schema_evolution_lab_enabled" {
   description = "Phase 4のSchema Evolution比較用Data Flow（Tolerant・Drift・Drift＋型推論）を作成する。Data Factory基盤（data_factory_enabled）の有効化が前提。"
   type        = bool

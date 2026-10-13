@@ -29,7 +29,7 @@ export function runPlan({ root = 'infra/terraform', output, event, env = process
   const allowed = ['subscription_id', 'operator_object_id', 'resource_group_name', 'storage_account_name', 'location', 'tags',
     'functions_enabled', 'function_app_name', 'function_plan_name', 'function_storage_account_name', 'function_identity_name',
     'data_factory_enabled', 'data_factory_name', 'data_factory_ir_name', 'schema_evolution_lab_enabled',
-    'monitoring_enabled', 'monitoring_notification_email'];
+    'monitoring_enabled', 'monitoring_notification_email', 'budget_enabled', 'monitoring_budget_start_date'];
   if (!uuid.test(env.ARM_SUBSCRIPTION_ID ?? '') || inputs.subscription_id !== env.ARM_SUBSCRIPTION_ID ||
       backend.subscription_id !== env.ARM_SUBSCRIPTION_ID || !uuid.test(inputs.operator_object_id ?? '') ||
       typeof inputs.resource_group_name !== 'string' || typeof inputs.storage_account_name !== 'string' ||
