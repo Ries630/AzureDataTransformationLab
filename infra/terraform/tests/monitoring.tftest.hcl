@@ -116,7 +116,7 @@ run "monitoring_configures_diagnostics_identity_and_failure_alert" {
     condition = toset([for table in values(azurerm_log_analytics_workspace_table.application_insights) : table.name]) == toset([
       "AppAvailabilityResults", "AppBrowserTimings", "AppDependencies", "AppEvents", "AppExceptions", "AppMetrics",
       "AppPageViews", "AppPerformanceCounters", "AppRequests", "AppSystemEvents", "AppTraces", "AppGenAIContent",
-    ]) && alltrue([for table in values(azurerm_log_analytics_workspace_table.application_insights) :
+      ]) && alltrue([for table in values(azurerm_log_analytics_workspace_table.application_insights) :
       table.workspace_id == azurerm_log_analytics_workspace.lab[0].id && table.plan == "Analytics" &&
       table.retention_in_days == 31 && table.total_retention_in_days == 31
     ])
