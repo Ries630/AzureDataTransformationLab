@@ -92,6 +92,24 @@ test('Data Factory用の入力を許可する', (t) => {
   assert.equal(f.calls[0], 'init');
 });
 
+test('監視用の機密入力をTerraformへ渡し、作業ファイルを後片付けする', (t) => {
+  const f = fixture(t);
+  const input = JSON.parse(f.env.TERRAFORM_INPUTS);
+  input.monitoring_enabled = true;
+  input.monitoring_notification_email = 'learner@example.com';
+  f.env.TERRAFORM_INPUTS = JSON.stringify(input);
+  const run = f.run;
+  f.run = (program, args) => {
+    const privateInput = JSON.parse(readFileSync(join(f.root, 'ci.auto.tfvars.json'), 'utf8'));
+    assert.equal(privateInput.monitoring_enabled, true);
+    assert.equal(privateInput.monitoring_notification_email, 'learner@example.com');
+    return run(program, args);
+  };
+  runPlan(f);
+  assert.ok(!readFileSync(f.output, 'utf8').includes('learner@example.com'));
+  assert.throws(() => readFileSync(join(f.root, 'ci.auto.tfvars.json')));
+});
+
 test('既存state初期化からvalidate・saved plan・showを順に実行し公開用Markdownだけを残す', (t) => {
   const f = fixture(t);
   runPlan(f);

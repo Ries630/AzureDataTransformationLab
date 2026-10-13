@@ -143,14 +143,17 @@ resource "azurerm_function_app_flex_consumption" "function" {
   # app_settingsへ入れないための既知差分である（docs/adr/0007の検証結果参照）。
   # ignore_changesは将来のUpdateで不正な接続文字列をPUTする恐れがあるため使わない。
   # accountName・credential・clientIdでUAIによるhost接続を明示する。
-  app_settings = {
+  app_settings = merge({
     "AzureWebJobsStorage"              = ""
     "AzureWebJobsStorage__accountName" = azurerm_storage_account.function_host[0].name
     "AzureWebJobsStorage__credential"  = "managedidentity"
     "AzureWebJobsStorage__clientId"    = azurerm_user_assigned_identity.function[0].client_id
     "LAB_STORAGE_ACCOUNT_NAME"         = azurerm_storage_account.lab.name
     "AZURE_CLIENT_ID"                  = azurerm_user_assigned_identity.function[0].client_id
-  }
+    }, var.monitoring_enabled ? {
+    "APPLICATIONINSIGHTS_CONNECTION_STRING"     = azurerm_application_insights.lab[0].connection_string
+    "APPLICATIONINSIGHTS_AUTHENTICATION_STRING" = "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD"
+  } : {})
 
   site_config {
     minimum_tls_version     = "1.2"
@@ -163,5 +166,6 @@ resource "azurerm_function_app_flex_consumption" "function" {
   depends_on = [
     azurerm_role_assignment.function_host_blob_owner,
     azurerm_role_assignment.function_lab_landing_blob_reader,
+    azurerm_role_assignment.function_monitoring_metrics_publisher,
   ]
 }

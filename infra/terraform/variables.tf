@@ -122,6 +122,31 @@ variable "data_factory_enabled" {
   nullable    = false
 }
 
+variable "monitoring_enabled" {
+  description = "Phase 5の監視・Pipeline失敗通知を作成する。"
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.monitoring_enabled || (var.functions_enabled && var.data_factory_enabled)
+    error_message = "monitoring_enabledはFunctionsとData Factoryを有効にしてから指定してください。"
+  }
+}
+
+variable "monitoring_notification_email" {
+  description = "Pipeline失敗通知を送る宛先メールアドレス。"
+  type        = string
+  default     = ""
+  sensitive   = true
+  nullable    = false
+
+  validation {
+    condition     = !var.monitoring_enabled || can(regex("^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$", var.monitoring_notification_email))
+    error_message = "monitoring_enabledの場合、monitoring_notification_emailに有効なメールアドレスを指定してください。"
+  }
+}
+
 variable "schema_evolution_lab_enabled" {
   description = "Phase 4のSchema Evolution比較用Data Flow（Tolerant・Drift・Drift＋型推論）を作成する。Data Factory基盤（data_factory_enabled）の有効化が前提。"
   type        = bool

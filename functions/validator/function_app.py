@@ -10,11 +10,13 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import unittest
+import uuid
 from pathlib import Path
 
 import azure.functions as func
@@ -50,34 +52,73 @@ def parse_request(request: func.HttpRequest) -> tuple[str, str]:
     return path, etag
 
 
+def log_validation_response(
+    request: func.HttpRequest, response: func.HttpResponse
+) -> func.HttpResponse:
+    """HTTP応答に対応する安全な構造化監視イベントを1件記録する。"""
+    payload = json.loads(response.get_body())
+    event = {
+        "event": "csv_validation",
+        "http_status": response.status_code,
+        "outcome": payload.get("status", payload.get("code", "INTERNAL_ERROR")),
+    }
+    run_id = request.headers.get("x-adf-pipeline-run-id", "")
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        run_id,
+    ):
+        event["pipeline_run_id"] = str(uuid.UUID(run_id))
+    logging.getLogger().log(
+        logging.ERROR if response.status_code >= 500 else logging.INFO,
+        json.dumps(event, separators=(",", ":")),
+    )
+    return response
+
+
 @app.route(route="validate", methods=["POST"], trigger_arg_name="request")
 def validate(request: func.HttpRequest) -> func.HttpResponse:
     """入力内容の判定と、呼び出し・読み取りの失敗を区別して返す。"""
+
+    def finish(response: func.HttpResponse) -> func.HttpResponse:
+        """応答を返す前に監視イベントを記録する。"""
+        return log_validation_response(request, response)
+
     try:
         path, etag = parse_request(request)
     except ValueError, UnicodeDecodeError:
-        return json_response(
-            {"code": "INVALID_REQUEST", "message": "filesystem・path・etagを確認してください。"},
-            400,
+        return finish(
+            json_response(
+                {
+                    "code": "INVALID_REQUEST",
+                    "message": "filesystem・path・etagを確認してください。",
+                },
+                400,
+            )
         )
     try:
-        return json_response(validate_csv(read_csv(path, etag), path))
+        return finish(json_response(validate_csv(read_csv(path, etag), path)))
     except InputChangedError:
-        return json_response(
-            {"code": "INPUT_CHANGED", "message": "入力のETagが変わっています。"}, 409
+        return finish(
+            json_response({"code": "INPUT_CHANGED", "message": "入力のETagが変わっています。"}, 409)
         )
     except StorageTimeoutError:
-        return json_response(
-            {"code": "STORAGE_TIMEOUT", "message": "入力の取得がタイムアウトしました。"}, 504
+        return finish(
+            json_response(
+                {"code": "STORAGE_TIMEOUT", "message": "入力の取得がタイムアウトしました。"}, 504
+            )
         )
     except StorageReadError:
-        return json_response(
-            {"code": "STORAGE_READ_FAILED", "message": "入力を取得できませんでした。"}, 502
+        return finish(
+            json_response(
+                {"code": "STORAGE_READ_FAILED", "message": "入力を取得できませんでした。"}, 502
+            )
         )
     except Exception:
         # SDKの例外本文にはURLや認証情報が含まれ得るため、応答とログへ展開しない。
-        return json_response(
-            {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
+        return finish(
+            json_response(
+                {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
+            )
         )
 
 

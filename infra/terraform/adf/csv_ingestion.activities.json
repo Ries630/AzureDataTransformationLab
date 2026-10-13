@@ -80,7 +80,8 @@
       "functionName": "validate",
       "method": "POST",
       "headers": {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-adf-pipeline-run-id": "@{pipeline().RunId}"
       },
       "body": {
         "filesystem": "landing",

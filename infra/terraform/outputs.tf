@@ -57,3 +57,18 @@ output "data_factory_trigger_name" {
   description = "Data Factory有効時に作成したStorage Event Trigger名。"
   value       = var.data_factory_enabled ? azurerm_data_factory_trigger_blob_event.landing_csv[0].name : null
 }
+
+output "monitoring_workspace_name" {
+  description = "Log Analytics workspace名。"
+  value       = var.monitoring_enabled ? azurerm_log_analytics_workspace.lab[0].name : null
+}
+
+output "monitoring_application_insights_name" {
+  description = "Application Insights名。"
+  value       = var.monitoring_enabled ? azurerm_application_insights.lab[0].name : null
+}
+
+output "monitoring_pipeline_failure_alert_name" {
+  description = "Pipeline失敗Metric Alert名。"
+  value       = var.monitoring_enabled ? azurerm_monitor_metric_alert.pipeline_failure[0].name : null
+}

@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,9 +18,14 @@ HANDLER = REGISTERED.get_user_function()
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def request(body: object) -> func.HttpRequest:
+def request(body: object, headers: dict[str, str] | None = None) -> func.HttpRequest:
     """HTTPクライアントが送るJSONを組み立てる。"""
-    return func.HttpRequest(method="POST", url="/api/validate", body=json.dumps(body).encode())
+    return func.HttpRequest(
+        method="POST",
+        url="/api/validate",
+        body=json.dumps(body).encode(),
+        headers=headers or {},
+    )
 
 
 def valid_request() -> func.HttpRequest:
@@ -156,6 +162,93 @@ class HttpContractTests(unittest.TestCase):
                 self.assertNotIn(b"private", response.get_body())
         blob.download_blob.side_effect = ServiceResponseError("private", error=TimeoutError())
         self.assertEqual(504, HANDLER(valid_request()).status_code)
+
+    @patch.dict(
+        os.environ,
+        {
+            "LAB_STORAGE_ACCOUNT_NAME": "testaccount",
+            "WEBSITE_HOSTNAME": "localhost:7071",
+            "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
+        },
+        clear=True,
+    )
+    @patch("storage.AzureCliCredential")
+    @patch("storage.BlobClient")
+    def test_each_http_response_emits_one_safe_structured_event(
+        self, client: MagicMock, credential: MagicMock
+    ) -> None:
+        """全HTTP結果のログを相関し、入力やStorage詳細を含めない。"""
+        correlation = str(uuid.uuid4()).upper()
+        valid = request(
+            {"filesystem": "landing", "path": "orders.csv", "etag": '"0xABC"'},
+            {"x-adf-pipeline-run-id": correlation},
+        )
+        cases = [
+            (valid, 200, "VALID", "INFO", "valid"),
+            (valid_request(), 200, "INVALID", "INFO", "invalid"),
+            (request({}), 400, "INVALID_REQUEST", "INFO", "request"),
+            (valid_request(), 409, "INPUT_CHANGED", "INFO", "changed"),
+            (valid_request(), 504, "STORAGE_TIMEOUT", "ERROR", "timeout"),
+            (valid_request(), 502, "STORAGE_READ_FAILED", "ERROR", "storage"),
+            (valid_request(), 500, "INTERNAL_ERROR", "ERROR", "internal"),
+        ]
+
+        for req, status, outcome, level, scenario in cases:
+            blob = client.return_value.__enter__.return_value
+            blob.download_blob.side_effect = None
+            if scenario == "valid":
+                blob.download_blob.return_value.readall.return_value = (
+                    ROOT / "samples/valid/orders_v1.csv"
+                ).read_bytes()
+            elif scenario == "invalid":
+                blob.download_blob.return_value.readall.return_value = (
+                    ROOT / "samples/invalid/orders_invalid.csv"
+                ).read_bytes()
+            elif scenario in {"changed", "storage"}:
+                error = HttpResponseError(message="https://secret.example/private?token=secret")
+                error.status_code = 412 if scenario == "changed" else 404
+                blob.download_blob.side_effect = error
+            elif scenario == "timeout":
+                blob.download_blob.side_effect = ServiceResponseError(
+                    "secret timeout detail", error=TimeoutError()
+                )
+            elif scenario == "internal":
+                blob.download_blob.side_effect = RuntimeError("body and secret")
+            with self.subTest(outcome=outcome), self.assertLogs(level=level) as captured:
+                response = HANDLER(req)
+            self.assertEqual(status, response.status_code)
+            self.assertEqual(1, len(captured.records))
+            self.assertEqual(level, captured.records[0].levelname)
+            event = json.loads(captured.records[0].getMessage())
+            self.assertEqual(
+                (
+                    {"event", "http_status", "outcome", "pipeline_run_id"}
+                    if req is valid
+                    else {"event", "http_status", "outcome"}
+                ),
+                set(event),
+            )
+            self.assertEqual("csv_validation", event["event"])
+            self.assertEqual(status, event["http_status"])
+            self.assertEqual(outcome, event["outcome"])
+            if req is valid:
+                self.assertEqual(correlation.lower(), event["pipeline_run_id"])
+            log_text = "\n".join(record.getMessage() for record in captured.records)
+            self.assertNotIn("orders.csv", log_text)
+            self.assertNotIn("secret", log_text)
+            self.assertNotIn("0xABC", log_text)
+            self.assertNotIn("private", log_text)
+            self.assertNotIn("https://", log_text)
+
+    def test_invalid_pipeline_run_id_is_omitted(self) -> None:
+        """UUID形式でない相関ヘッダーはイベントへ含めない。"""
+        req = request({}, {"x-adf-pipeline-run-id": "bad-secret-value"})
+        with self.assertLogs(level="INFO") as captured:
+            HANDLER(req)
+        event = json.loads(captured.records[0].getMessage())
+        self.assertNotIn("pipeline_run_id", event)
+        log_text = "\n".join(record.getMessage() for record in captured.records)
+        self.assertNotIn("bad-secret-value", log_text)
 
     @patch.dict(
         os.environ,
