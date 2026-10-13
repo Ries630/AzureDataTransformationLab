@@ -151,13 +151,13 @@ resource "azurerm_function_app_flex_consumption" "function" {
     "LAB_STORAGE_ACCOUNT_NAME"         = azurerm_storage_account.lab.name
     "AZURE_CLIENT_ID"                  = azurerm_user_assigned_identity.function[0].client_id
     }, var.monitoring_enabled ? {
-    "APPLICATIONINSIGHTS_CONNECTION_STRING"     = azurerm_application_insights.lab[0].connection_string
     "APPLICATIONINSIGHTS_AUTHENTICATION_STRING" = "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD"
   } : {})
 
   site_config {
-    minimum_tls_version     = "1.2"
-    scm_minimum_tls_version = "1.2"
+    minimum_tls_version                    = "1.2"
+    scm_minimum_tls_version                = "1.2"
+    application_insights_connection_string = var.monitoring_enabled ? azurerm_application_insights.lab[0].connection_string : null
   }
 
   tags = local.function_tags

@@ -113,7 +113,7 @@ run "monitoring_configures_diagnostics_identity_and_failure_alert" {
   }
 
   assert {
-    condition     = azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"] == azurerm_application_insights.lab[0].connection_string && azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_AUTHENTICATION_STRING"] == "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD" && azurerm_function_app_flex_consumption.function[0].app_settings["LAB_STORAGE_ACCOUNT_NAME"] == azurerm_storage_account.lab.name
+    condition     = azurerm_function_app_flex_consumption.function[0].site_config[0].application_insights_connection_string == azurerm_application_insights.lab[0].connection_string && azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_AUTHENTICATION_STRING"] == "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD" && azurerm_function_app_flex_consumption.function[0].app_settings["LAB_STORAGE_ACCOUNT_NAME"] == azurerm_storage_account.lab.name
     error_message = "Function AppはUAI認証のApplication Insights設定を追加し、既存app settingsを保たなければなりません。"
   }
 
