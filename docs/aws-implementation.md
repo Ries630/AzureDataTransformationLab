@@ -95,7 +95,7 @@ aws s3 cp samples/valid/orders_v1.csv s3://BUCKET/PREFIXlanding/orders_v1.csv
 
 ### 公開済みの結果を取得する
 
-公開済みかどうかは、DynamoDBの世代itemを強い整合性で読んで判断する。`status=SUCCEEDED`であることと、`publication.bucket`・`publication.key`を確かめ、その参照から結果を取得する。S3の`output/`を一覧しただけでは、公開済みと判定しない。`inputId`は、Step Functionsの実行履歴で確認する。
+公開済みかどうかは、DynamoDBの世代itemを強い整合性で読んで判断する。`status=SUCCEEDED`であることと、`publication.bucket`・`publication.key`を確かめ、その参照から結果を取得する。S3の`output/`を一覧しただけでは、公開済みと判定しない。`inputId`は、Step Functionsの実行履歴か、Lambdaのログ（`/aws/lambda/`の後にTerraformの変数`name`の値を付けたロググループ）で確認する。
 
 ```bash
 aws dynamodb get-item --table-name STATE_TABLE --key file://input-key.json --consistent-read

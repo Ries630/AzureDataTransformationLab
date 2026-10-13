@@ -692,6 +692,59 @@ def handler(event, context):
     )
     operation = event.get("operation")
     try:
+        result = _dispatch(pipeline, operation, event)
+    except Exception as error:
+        code = (
+            error.args[0]
+            if isinstance(
+                error,
+                (ContractError, InputChanged, OwnershipLost, TransientServiceError, ServiceFailure),
+            )
+            and error.args
+            else type(error).__name__
+        )
+        _log_operation(operation, event, None, code)
+        raise
+    _log_operation(operation, event, result, None)
+    return result
+
+
+def _mapping(value):
+    """ログ用に辞書だけを取り出し、それ以外は空として扱う。"""
+    return value if isinstance(value, dict) else {}
+
+
+def _log_operation(operation, event, result, code):
+    """本文を含めず、処理の識別子と結果codeだけを1行のJSONで記録する。"""
+    state = _mapping(event.get("state"))
+    source = result if isinstance(result, dict) and "input" in result else state
+    attempt = _mapping(source.get("attempt"))
+    transform = _mapping(source.get("transform"))
+    glue_result = _mapping(source.get("glueResult"))
+    record = {
+        "operation": operation if isinstance(operation, str) else None,
+        "outcome": "error" if code else "ok",
+        "code": code,
+        "inputId": _mapping(source.get("input")).get("inputId"),
+        "attemptId": attempt.get("attemptId") or state.get("attemptId"),
+        "executionArn": attempt.get("executionArn")
+        or event.get("executionArn")
+        or state.get("executionArn"),
+        "jobRunId": transform.get("jobRunId")
+        or glue_result.get("JobRunId")
+        or glue_result.get("JobRunID"),
+    }
+    print(
+        json.dumps(
+            {key: value for key, value in record.items() if isinstance(value, str) and value}
+        ),
+        flush=True,
+    )
+
+
+def _dispatch(pipeline, operation, event):
+    """操作名に対応する処理を実行し、SDKの失敗を公開できるcodeへ変換する。"""
+    try:
         if operation == "initialize":
             return pipeline.initialize(event["event"], event["executionArn"])
         if operation not in (

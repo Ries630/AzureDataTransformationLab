@@ -424,6 +424,132 @@ class RetryReviewTests(unittest.TestCase):
                     with self.assertRaises(expected):
                         module.handler({"operation": operation, "state": {}}, None)
 
+    def test_handler_logs_identifiers_and_error_code_without_content(self):
+        """操作ごとに識別子と結果codeだけを1行のJSONで記録する。"""
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+
+        env = dict(
+            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
+        )
+        state = {
+            "input": {"bucket": "bucket", "key": "landing/a.csv", "etag": "e", "inputId": "i" * 64},
+            "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
+            "transform": {"jobRunId": "jr_1"},
+            "csv": "order_id,secret-content",
+        }
+        with (
+            patch.dict(module.os.environ, env),
+            patch.object(module.boto3, "client"),
+            patch.object(module.boto3, "resource"),
+            patch.object(module, "Pipeline") as pipeline,
+        ):
+            pipeline.return_value.publish.return_value = state
+            pipeline.return_value.release.side_effect = module.ContractError(
+                "SERVICES_STILL_RUNNING"
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.handler({"operation": "publish", "state": state}, None)
+                with self.assertRaises(module.ContractError):
+                    module.handler({"operation": "release", "state": state}, None)
+        success, failure = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            success,
+            {
+                "operation": "publish",
+                "outcome": "ok",
+                "inputId": "i" * 64,
+                "attemptId": "attempt",
+                "executionArn": "arn:execution",
+                "jobRunId": "jr_1",
+            },
+        )
+        self.assertEqual(failure["outcome"], "error")
+        self.assertEqual(failure["code"], "SERVICES_STILL_RUNNING")
+        self.assertNotIn("secret-content", output.getvalue())
+        self.assertNotIn("landing/a.csv", output.getvalue())
+
+    def test_handler_logs_glue_run_id_after_record_and_cleanup_failures(self):
+        """記録更新失敗と後続CleanupでもGlue実行IDを本文なしで記録する。"""
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+
+        from botocore.exceptions import ClientError
+
+        env = dict(
+            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
+        )
+        for spelling, run_id in (("JobRunId", "jr-lower"), ("JobRunID", "jr-upper")):
+            for error_code, expected_error, logged_code in (
+                ("InternalServerError", module.TransientServiceError, "InternalServerError"),
+                ("ConditionalCheckFailedException", module.OwnershipLost, "OWNER_CHANGED"),
+            ):
+                with self.subTest(spelling=spelling, code=error_code):
+                    s3, glue, sfn, table = (Mock() for _ in range(4))
+                    table.update_item.side_effect = [
+                        ClientError({"Error": {"Code": error_code}}, "UpdateItem"),
+                        {},
+                    ]
+                    table.get_item.return_value = {}
+                    sdk_clients = {"s3": s3, "glue": glue, "stepfunctions": sfn}
+                    state = {
+                        "input": {
+                            "bucket": "bucket",
+                            "key": "landing/private.csv",
+                            "etag": "etag-secret",
+                            "inputId": "i" * 64,
+                        },
+                        "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
+                        "accepted": True,
+                        "transform": {"stagingPrefix": "staging/private/"},
+                        "glueResult": {spelling: run_id, "Result": "private-result"},
+                        "csv": "private-csv-body",
+                    }
+                    output = io.StringIO()
+                    with (
+                        patch.dict(module.os.environ, env),
+                        patch.object(
+                            module.boto3,
+                            "client",
+                            side_effect=lambda name, clients=sdk_clients, **_: clients[name],
+                        ),
+                        patch.object(module.boto3, "resource") as resource,
+                        contextlib.redirect_stdout(output),
+                    ):
+                        resource.return_value.Table.return_value = table
+                        with self.assertRaises(expected_error):
+                            module.handler({"operation": "record_glue", "state": state}, None)
+                        self.assertNotIn("jobRunId", state["transform"])
+                        state["failure"] = {"Error": logged_code, "Cause": "private-cause"}
+                        module.handler({"operation": "cleanup", "state": state}, None)
+                    failure, cleanup = [json.loads(line) for line in output.getvalue().splitlines()]
+                    self.assertEqual(failure["jobRunId"], run_id)
+                    self.assertEqual(failure["outcome"], "error")
+                    self.assertEqual(failure["code"], logged_code)
+                    self.assertEqual(cleanup["jobRunId"], run_id)
+                    self.assertEqual(cleanup["outcome"], "ok")
+                    self.assertNotIn("code", cleanup)
+                    self.assertEqual(table.update_item.call_count, 2)
+                    for private_value in (
+                        "private.csv",
+                        "etag-secret",
+                        "private-result",
+                        "private-csv-body",
+                        "private-cause",
+                    ):
+                        self.assertNotIn(private_value, output.getvalue())
+
+        output = io.StringIO()
+        state = {"transform": {"jobRunId": "preferred"}, "glueResult": {"JobRunId": "fallback"}}
+        with contextlib.redirect_stdout(output):
+            module._log_operation("cleanup", {"state": state}, None, None)
+        self.assertEqual(json.loads(output.getvalue())["jobRunId"], "preferred")
+
 
 if __name__ == "__main__":
     unittest.main()
