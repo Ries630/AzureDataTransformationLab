@@ -1,58 +1,66 @@
 # 学習計画
 
+この文書は、Azure学習環境をPhaseごとに構築する順序と、各Phaseで実行する手順・確認項目を定める。目的と完成条件は[プロジェクト概要](project-brief.md)、サービス構成と処理の仕様は[アーキテクチャ](architecture.md)を正とする。各Phaseの仕組みは、表の「解説」から読める。
+
+| Phase | 作るもの・確かめること | Issue | 解説 |
+|---|---|---|---|
+| [0](#phase-0-ローカル環境) | ローカルのツールとAzure認証 | [#6](https://github.com/Ries630/AzureDataTransformationLab/issues/6) | |
+| [1](#phase-1-storage) | ADLS Gen2の保存先 | [#7](https://github.com/Ries630/AzureDataTransformationLab/issues/7) | [Phase 1](tutorials/phase-1-storage.md) |
+| [2](#phase-2-azure-functionsによる入力検証) | FunctionsによるCSV検証 | [#16](https://github.com/Ries630/AzureDataTransformationLab/issues/16) | [Phase 2](tutorials/phase-2-validation.md) |
+| [3](#phase-3-data-factory-pipeline) | Data Factoryによる自動処理 | [#17](https://github.com/Ries630/AzureDataTransformationLab/issues/17) | [Phase 3](tutorials/phase-3-data-factory.md) |
+| [4](#phase-4-schema-evolution) | スキーマ変化への対応の比較 | [#18](https://github.com/Ries630/AzureDataTransformationLab/issues/18) | [Phase 4](tutorials/phase-4-schema-evolution.md) |
+| [5](#phase-5-monitoring) | 障害通知と費用監視 | [#19](https://github.com/Ries630/AzureDataTransformationLab/issues/19) | |
+| [6](#phase-6-idempotencyとretry) | 冪等性と再実行 | [#20](https://github.com/Ries630/AzureDataTransformationLab/issues/20) | |
+| [7](#phase-7-iacの整理) | IaCの整理と再構築 | [#21](https://github.com/Ries630/AzureDataTransformationLab/issues/21) | |
+
 ## 進め方
 
-各Phaseを順番に実装し、完了条件を確認してから次へ進む。
+Phaseは表の順に1つずつ実装し、完了条件を確かめてから次へ進む。完成形を一度に構築せず、Azure PortalとADF Studioで実物を確認した結果を、TerraformとGit管理の定義へ戻していく。現在の作業Phaseと進捗はIssueで管理する。
 
-一度に完成形を構築せず、Azure PortalとADF Studioで実物を確認した結果をTerraformとGit管理へ戻す。
+Phase 4を終えた後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）を終えてから、この順で進める。[外部SQL取得（#28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)と[対応表マスタ（#29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)は、AWS側も含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
 
-GitHubリポジトリを作成した後は、現在の作業Phaseと進捗をIssueで管理する。
-
-Phase 4までの完了後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）の後に、この順で進める。[対応表マスタ（Issue #29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)と[外部SQL取得（Issue #28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)はAWS側を含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
+学習環境が不要になったときの削除と、削除後の再構築は、[後片付けと再構築](lab-teardown.md)にまとめている。
 
 ## 利用ツール
 
-### コマンドライン
+| 種類 | ツール | 用途 |
+|---|---|---|
+| コマンドライン | Git | リポジトリの管理 |
+| | Azure CLI（`az`） | ログイン、Subscriptionの確認、Storageの読み書き |
+| | TerraformとAzureRM Provider | Azureリソースの定義と作成 |
+| | Azure Functions Core Tools（`func`） | Functionのローカル実行と発行 |
+| | uv | Pythonの実行と依存関係の固定 |
+| | jq | plan JSONや応答の確認 |
+| GUI | Azure Portal | 作成したリソースの確認 |
+| | Azure Data Factory Studio | Pipelineの閲覧とData FlowのDebug |
+| | Azure Storage Explorer（任意） | Storageの中身の確認 |
 
-- Git
-- Azure CLI（`az`）
-- Terraform
-- AzureRM Provider
-- Azure Functions Core Tools（`func`）
-- uv
-
-### GUI
-
-- Azure Portal
-- Azure Data Factory Studio
-- Azure Storage Explorer（任意）
-
-Azure Developer CLI（`azd`）は初期段階では使用しない。
-
-Azure CLIとTerraformの役割を直接理解し、抽象化レイヤーを増やさないためである。
+Azure Developer CLI（`azd`）は初期段階では使わない。Azure CLIとTerraformがそれぞれ何をしているかを直接理解したいので、抽象化の層を増やさない。
 
 ## Terraformの方針
 
-Azureリソースは原則としてTerraformで管理する。
+- Azureリソースは原則としてTerraformで管理する。PortalやADF Studioで設定を試した場合も、再現に必要な設定は最終的にTerraformかGit管理の定義へ戻す。
+- Azureリソースを作成・変更する前に`terraform plan`の内容を確認し、明示的な承認を得る。適用には、承認したplanを保存したファイルを使う。
+- アクセスキーをコードやTerraform変数に書かず、Managed IdentityとRBACで認可する。
 
-学習のためにPortalまたはADF Studioで設定を試した場合も、再現に必要な設定は最終的にTerraformまたはGit管理された定義へ戻す。
+Phase 2以降の機能は、Terraform変数のフラグ（`functions_enabled`など）で有効にする。フラグはGit管理外の`infra/terraform/phase<N>.auto.tfvars`に保存し、Terraformが自動で読み込む。各Phaseのplan手順にある次の形のブロックは、この入力ファイルを初めて作るためのものである。
 
-Azureリソースを実際に作成する前に`terraform plan`を確認し、明示的な承認を得る。
+```bash
+(
+set -eu
+umask 077
+set -o noclobber
+printf '%s\n' 'functions_enabled = true' > infra/terraform/phase2.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase2.tfplan
+terraform -chdir=infra/terraform show -no-color phase2.tfplan
+)
+```
 
-アクセスキーをコードやTerraform変数へ直書きせず、Managed IdentityとRBACを使う。
+`set -o noclobber`により、同名のファイルが既にあると書き込みが失敗し、`set -e`によってplanを実行せずにブロックが終わる。既存の入力を誤って上書きしないためである。ファイルが既にある場合は、中身を確認・編集してから、planとshowの2行だけを実行する。
 
 ## Phase 0: ローカル環境
 
-次を準備する。
-
-- Gitリポジトリ
-- Azure CLI
-- Terraform
-- Azure Functions Core Tools
-- uv
-- Azure Storage Explorer（任意）
-
-確認コマンドは次のとおり。
+[利用ツール](#利用ツール)のコマンドラインツールを用意し、次のコマンドで動作を確かめる。
 
 ```bash
 git status
@@ -63,31 +71,29 @@ func --version
 uv --version
 ```
 
-完了条件は、対象Azure Subscriptionを確認でき、TerraformとFunctions Core Toolsを実行できることである。
+完了条件は、対象のAzure Subscriptionを確認でき、TerraformとFunctions Core Toolsを実行できることである。
 
 ## Phase 1: Storage
 
-Terraformで次を作成する。
+Terraformで、CSVを置く保存先を作る。
 
 ```text
 Resource Group
    ↓
-Storage Account（ADLS Gen2、Hierarchical Namespace有効）
+Storage Account（ADLS Gen2、Hierarchical Namespace有効、LRS）
    ├─ landing
    ├─ validated
    ├─ rejected
    └─ output
 ```
 
-LRSかつ学習用途で安価な構成を選ぶ。
+学習用途なので、LRSの安価な構成を選ぶ。作成後はサンプルCSVをCLIで`landing`へアップロードし、PortalまたはStorage Explorerで中身を確かめる。
 
-サンプルCSVをCLIで`landing`へアップロードし、PortalまたはStorage Explorerから内容を確認する。
-
-完了条件は`terraform fmt`と`terraform validate`が成功し、承認された`terraform plan`どおりにStorageを作成できることである。
+完了条件は、`terraform fmt`と`terraform validate`が成功し、承認された`terraform plan`どおりにStorageを作成できることである。
 
 ### 1. Terraformのファイルと実行対象を理解する
 
-構成は[`infra/terraform/`](../infra/terraform/)に置く。Terraformは同じディレクトリの`.tf`をまとめて読むため、ファイル名が実行順序を決めるわけではない。
+構成は[`infra/terraform/`](../infra/terraform/)に置く。Terraformは同じディレクトリの`.tf`をまとめて読むため、ファイル名で実行順序が決まるわけではない。
 
 | ファイル | 読むポイント |
 |---|---|
@@ -98,13 +104,13 @@ LRSかつ学習用途で安価な構成を選ぶ。
 | [`storage.tf`](../infra/terraform/storage.tf) | Storage、実行ユーザーの権限、Filesystem間の依存 |
 | [`outputs.tf`](../infra/terraform/outputs.tf) | 後続のCLI操作で使う名前 |
 
-実行対象は`Personal-Sandbox`とする。分離の理由は[ADR-0001](adr/0001-isolate-learning-subscription.md)を参照する。
+実行対象のSubscriptionは`Personal-Sandbox`である。ほかのSubscriptionと分けた理由は[ADR-0001](adr/0001-isolate-learning-subscription.md)にある。
 
-実行ユーザーにはResource GroupとStorageの作成、および新設Storageへのロール割り当て権限が必要である。TerraformはAzure CLIでログインしたユーザーを使用し、そのユーザーに新設Storage限定のデータ用ロールを付ける。サービス向けManaged Identityは後続Phaseで追加する。
+TerraformはAzure CLIでログインしたユーザーとして実行する。このユーザーには、Resource GroupとStorageを作成する権限と、新設したStorageにロールを割り当てる権限が必要である。Terraformは、このユーザーに新設Storageだけを範囲とするデータ用ロールを付ける。サービス用のManaged Identityは後続のPhaseで追加する。
 
 ### 2. ローカルの入力を用意する
 
-以降のコマンドはリポジトリルートで実行する。BashまたはZsh、Azure CLI、Terraformに加え、plan JSONの確認に`jq`を使う。
+以降のコマンドはリポジトリのルートで、BashまたはZshから実行する。まず、対象Subscriptionの情報を取得する。
 
 ```bash
 umask 077
@@ -115,27 +121,32 @@ az account show --subscription "$ARM_SUBSCRIPTION_ID" \
   --query '{name:name,state:state,userType:user.type}' -o json
 ```
 
-結果が`Personal-Sandbox`、`Enabled`、`user`であることを確認する。`az account set`でCLIの既定Subscriptionを変更する必要はない。
+結果が`Personal-Sandbox`、`Enabled`、`user`であることを確かめる。コマンドごとにSubscriptionを指定するので、`az account set`でCLIの既定を変える必要はない。
 
-初回だけ[`terraform.tfvars.example`](../infra/terraform/terraform.tfvars.example)を`infra/terraform/terraform.tfvars`へコピーし、新規のResource Group名と、Azure全体で一意なStorage Account名を指定する。
+初回だけ、[`terraform.tfvars.example`](../infra/terraform/terraform.tfvars.example)をコピーし、新規のResource Group名と、Azure全体で一意なStorage Account名を記入する。Subscription IDはファイルに書かず、上で設定した環境変数から渡す。
 
 ```bash
 cp -n infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
 ```
 
-Subscription IDは環境変数から渡す。`.tfvars`、state、保存したplanとそのJSON・テキストはGit管理しない。stateやplanには識別子・機密値が含まれ得るため、内容を公開IssueやPRへ貼り付けない。`.terraform.lock.hcl`は選択したProviderを再現するためGit管理する。
+stateと保存したplanには、識別子や機密値が含まれることがある。そのため、次のようにGitでの扱いを分ける。
 
-Providerを更新したときは、Mac（Apple Silicon）とCI（Linux x86_64）の両方のチェックサムを記録する。
+| ファイル | Git管理 | 理由 |
+|---|---|---|
+| `.tfvars`、state、保存したplanとそのJSON・テキスト | しない | 識別子や機密値を含みうる。中身を公開のIssueやPRにも貼らない |
+| `.terraform.lock.hcl` | する | 選択したProviderを再現する |
+
+Providerを更新したときは、Mac（Apple Silicon）とCI（Linux x86_64）の両方のチェックサムをロックファイルに記録する。
 
 ```bash
 terraform -chdir=infra/terraform providers lock -platform=darwin_arm64 -platform=linux_amd64
 ```
 
-学習用stateは専用StorageのAzureRM backendへ移す。[stateの共有と移行](terraform-state.md)で保存先の構築と既存stateの移行を済ませてから、以降の操作へ進む。bootstrap root自身のstate保管と復旧方法も同文書を参照する。
+stateは専用StorageのAzureRM backendに置く。保存先の構築、local stateからの移行、保存先自身（bootstrap root）のstateの保管と復旧は、[stateの共有と移行](terraform-state.md)の手順で行う。移行を済ませてから次へ進む。
 
 ### 3. Microsoft.Storageだけを登録する
 
-Provider登録はAzure側への変更である。前準備の承認を受けたうえで、未登録の場合だけ実行する。
+AzureでStorageのAPIを使うには、Subscriptionに`Microsoft.Storage`のResource Providerを登録する必要がある。登録はAzure側への変更なので、前準備として承認を受け、未登録の場合だけ実行する。
 
 ```bash
 az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
@@ -146,13 +157,13 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" \
   --namespace Microsoft.Storage
 ```
 
-登録処理は非同期である。`az provider show`を再実行し、`Registered`になってから次へ進む。AzureRMによる自動登録は構成で無効化しているため、plan中に別のProviderを登録することはない。
+登録は非同期に進む。`az provider show`を再実行し、`Registered`になってから次へ進む。AzureRMによる自動登録は構成で無効にしているので、planの途中で別のProviderが登録されることはない。
 
-入力したResource Groupが既存でないことを`az group exists`、Storage Account名が使用可能なことを`az storage account check-name`で確認する。どちらにも`--subscription "$ARM_SUBSCRIPTION_ID"`を明示する。既存のリソースを流用・importせず、新規名を選ぶ。
+続けて、記入した名前が使えることを確かめる。Resource Groupが存在しないことを`az group exists`で、Storage Account名が使用可能なことを`az storage account check-name`で確認する。どちらにも`--subscription "$ARM_SUBSCRIPTION_ID"`を付ける。既存のリソースは流用もimportもせず、新しい名前を選ぶ。
 
 ### 4. planを作り、作成内容を読む
 
-PR上での変更確認は[Terraform planのPRレビュー](terraform-plan-review.md)を参照する。以下はローカルで適用対象のsaved planを作成し、機械的に照合する手順である。詳細が必要な場合は`terraform show`でsaved planを確認する。
+ここでは、適用に使うplanをローカルで作り、内容を機械的に照合する。PR上でplanを確認する方法は[Terraform planのPRレビュー](terraform-plan-review.md)にある。詳細を人が読む形で確かめたいときは、`terraform show`でsaved planを表示する。
 
 ```bash
 node scripts/terraform/backend.mjs init
@@ -164,11 +175,11 @@ terraform -chdir=infra/terraform show -json phase1.tfplan \
   > infra/terraform/phase1.tfplan.json
 ```
 
-`terraform test`はAzure APIをモックし、対象の取り違えを拒否できるかを確認する。実際のAzure権限や作成可否は、実planと承認後の適用で確認する。
+`terraform test`はAzure APIをモックに置き換え、対象Subscriptionを取り違えたときにplanを拒否できるかを確かめる。実際のAzure権限で作成できるかどうかは、実planと承認後の適用で確かめる。
 
-planの`+`は作成予定を表す。Phase 1の初回構築ではResource Group、Storage、実行ユーザーのRole Assignment、4つのFilesystemの計7件を追加した。state移行直後は、これらを再作成せず差分なしになることを確認する。
+planの`+`は作成予定を表す。Phase 1の初回構築では、Resource Group、Storage、実行ユーザーのRole Assignment、4つのFilesystemの計7件が作成予定になった。stateを移行した直後のplanでは、これらを作り直さず、差分なしになることを確かめる。
 
-plan JSONから対象Subscriptionと操作一覧を確認する。Subscription ID自体を出力せず、ローカルで指定値と照合する。
+次に、plan JSONから対象Subscriptionと操作の一覧を取り出す。Subscription IDそのものは出力せず、ローカルで指定値と照合した結果だけを表示する。
 
 ```bash
 jq --arg expected "${ARM_SUBSCRIPTION_ID:?}" '
@@ -183,25 +194,37 @@ jq --arg expected "${ARM_SUBSCRIPTION_ID:?}" '
 ' infra/terraform/phase1.tfplan.json
 ```
 
-照合結果がすべて`true`で、Subscription名が対象と一致し、操作一覧が今回のコード変更に対応するものだけであることを確認する。state移行直後は`no-op`だけになる。コード上でも、全リソースが単一のProviderと学習用Resource Group・Storageの参照からつながっていることを照合し、`Personal-Data`への変更がないことを確認する。
+出力では次を確かめる。
 
-Storage定義の`is_hns_enabled`が階層名前空間を有効にし、`for_each`が名前をキーとして4つのFilesystemを管理する。`scope`はデータ用ロールの効く範囲をStorageに限定する。Filesystemの`depends_on`は、Storageの存在に加えて権限の付与完了も待つために必要である。
+- 照合結果がすべて`true`で、Subscription名が対象と一致する。
+- 操作の一覧に、今回のコード変更に対応するものだけが並んでいる。state移行の直後なら`no-op`だけになる。
+- コード上でも、全リソースが単一のProviderと、学習用のResource Group・Storageへの参照からつながっている。`Personal-Data`への変更は含まれない。
 
-plan提示時には、リージョンとSKU、想定する保存容量・操作回数、取得日の明らかな[公式料金](https://azure.microsoft.com/pricing/details/storage/data-lake/)から費用を見積もる。Hot/LRSでも保存容量、操作、メタデータ、外向き転送等に従量料金がある。予算目標は[プロジェクト概要](project-brief.md#学習環境の制約)を参照する。BudgetとCost AlertはPhase 5で追加するため、この段階では費用を自動停止する仕組みはない。
+コードの読みどころは次の4つである。`is_hns_enabled`が階層名前空間を有効にし、`for_each`が名前をキーとして4つのFilesystemを管理する。`scope`はデータ用ロールの範囲を作成したStorageに限定する。Filesystemの`depends_on`は、Storageの存在に加えて、権限の付与が終わるのを待つために必要である。
+
+planを提示するときは、リージョンとSKU、想定する保存容量と操作回数、取得日を明記した[公式料金](https://azure.microsoft.com/pricing/details/storage/data-lake/)から費用を見積もる。Hot・LRSでも、保存容量、操作、メタデータ、外向きの転送などに従量料金がかかる。予算の目標は[プロジェクト概要](project-brief.md#学習環境の制約)にある。BudgetとCost AlertはPhase 5で追加するので、この段階には費用で自動停止する仕組みがない。
 
 ### 5. 承認されたplanを適用する
 
-**plan内容と費用・後片付け方法を提示し、明示的な適用承認を受けてから実行する。**
+**planの内容、費用、後片付けの方法を提示し、明示的な適用承認を受けてから実行する。**
 
 ```bash
 terraform -chdir=infra/terraform apply phase1.tfplan
 ```
 
-保存したplanを指定することで、確認済みの変更を適用する。コード、入力、stateが変わった場合は新しいplanを作り、再度確認・承認する。
+保存したplanを指定するので、確認した変更だけが適用される。コード、入力、stateのいずれかが変わった場合は、planを作り直して再び確認と承認を受ける。
 
-Role Assignmentの作成完了と権限の反映完了は同時ではない。[Azureの説明](https://learn.microsoft.com/azure/storage/blobs/assign-azure-role-data-access)では反映に最大10分かかる場合がある。初回にFilesystem作成が403で失敗した場合は、付与先ユーザー・ロール・スコープを確認し、反映を待つ。stateを削除せず再planし、残っている変更を提示して承認後に再適用する。403をキー認証への切り替えで回避しない。
+Role Assignmentの作成が終わっても、権限がすぐに有効になるとは限らない。[Azureの説明](https://learn.microsoft.com/azure/storage/blobs/assign-azure-role-data-access)では、反映に最大10分かかる場合がある。初回にFilesystemの作成が403で失敗したときは、次の順で対処する。
+
+1. 付与先のユーザー、ロール、スコープを確認し、反映を待つ。
+2. stateを削除せずにplanを作り直し、残っている変更を提示する。
+3. 承認を受けてから再適用する。
+
+403は、アカウントキーによる認証へ切り替えて回避しない。
 
 ### 6. 作成したStorageとCSVを確認する
+
+Terraformのoutputから名前を取り出し、Storageの設定、Filesystem、CSVの読み書きを順に確かめる。
 
 ```bash
 export LAB_RESOURCE_GROUP="$(terraform -chdir=infra/terraform output -raw resource_group_name)"
@@ -229,142 +252,38 @@ rm "$LAB_DOWNLOAD"
 terraform -chdir=infra/terraform plan -input=false -detailed-exitcode
 ```
 
-HNS有効・Standard_LRS・Shared Key無効、4つのFilesystem、CSVの内容一致を確認する。PortalまたはStorage Explorerでも`landing/orders_v1.csv`を開いて構成を確かめる。検証用CSVはTerraform管理対象にしないため、再planが差分なし（終了コード0）になることを確認する。終了コード2は差分あり、1はエラーである。
+| 確認すること | 期待する結果 |
+|---|---|
+| Storageの設定 | HNSが有効、`Standard_LRS`、Shared Keyが無効 |
+| Filesystem | `landing`、`validated`、`rejected`、`output`の4つがある |
+| CSVの往復 | `cmp`が差分を出さず、終了コードが0になる |
+| 再plan | 終了コード0（差分なし） |
+
+CSVはTerraformの管理対象ではないので、アップロード後の再planも差分なしになる。`-detailed-exitcode`の終了コードは、0が差分なし、2が差分あり、1がエラーである。最後にPortalまたはStorage Explorerでも`landing/orders_v1.csv`を開き、構成を確かめる。
 
 ### 7. 後片付けする
 
-この節は、学習環境が不要になったときに実施する。Phase 1の構築完了は削除完了を意味しない。削除すると後続Phaseへ進む前に再構築が必要になる。
-
-#### 準備とCIの休止
-
-対象Subscriptionと入力を[ローカル入力の手順](#2-ローカルの入力を用意する)で確認する。学習用rootだけを削除し、state保存先・履歴とCI Identityは保持する。保存先の保護は[stateの後片付け規定](terraform-state.md#復旧と後片付け)を参照する。Provider登録も解除しない。
-
-CI接続済みの場合は、承認を受けてAzure接続ありのPR planを休止する。認証不要の`terraform.yml`は停止しない。
-
-```bash
-gh workflow disable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
-gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
-gh api --paginate 'repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml/runs?per_page=100' \
-  --jq '.workflow_runs[] | select(.status != "completed") | {id,status}'
-```
-
-`disabled_manually`を確認する。上の全ページ照会に実行が出た場合は、完了を待つか、中止の承認を受けた対象のIDを`LAB_RUN_ID`に設定して`gh run cancel "${LAB_RUN_ID:?}" --repo Ries630/AzureDataTransformationLab`で中止する。照会を繰り返し、未完了の実行が0件（出力なし）になったことを確認するまで切り離しplanへ進まない。ローカルのTerraform処理も終了を確認する。workflowの無効化だけでは開始済みの実行は停止しない。休止日時と確認結果を作業IssueまたはPRへ記録する。削除を完了した場合は再構築まで休止を維持し、途中で中止する場合は[中止時の復旧](#中止時の復旧)へ進む。
-
-現時点のResource Group内のリソースと全Filesystemのデータ一覧を、stateの管理対象と照合する。サンプルCSVも削除対象なので、最新の学習用remote state、CI用local state、データを非公開の保管先へ退避して内容一致を確認する。stateだけではCSVを復元できない。stateの保管・権限は[stateの保管手順](terraform-state.md#2-認証と保護を確認する)に従い、データもGit管理外の0700ディレクトリ・0600ファイルで保管する。
-
-**追加データや管理外リソースが見つかった場合は停止する。** RG・Storageの削除は内部のデータやリソースも失わせるため、Terraformのplanに個別表示されなくても削除の影響範囲に入る。退避・移動または削除対象の再確定を済ませ、改めて承認を得るまで適用しない。
-
-#### CIの依存を切り離すplan
-
-CI接続済みの場合、[`infra/ci-plan/`](../infra/ci-plan/)が別stateで管理する学習用RG・Storageの読み取り権限を先に解除する。`lab_access_enabled`の既定値は`true`であり、既存アドレスからの移行は[`main.tf`](../infra/ci-plan/main.tf)の`moved`ブロックで扱う。[Terraformの説明](https://developer.hashicorp.com/terraform/language/modules/develop/refactoring#enable-count-or-for_each-for-a-resource)も参照できる。
-
-初回の準備修正では、接続有効時のplanに不要な再作成がないことを先に確認する。その後、Git管理外の`infra/ci-plan/cleanup.auto.tfvars`を次の内容で用意する。既に存在する場合は上書きせず内容を確認する。
-
-```hcl
-lab_access_enabled = false
-```
-
-これは削除後も保持するローカル入力である。一度限りの`-var`だけにすると次のplanが既定値へ戻るため、保存した入力を使う。CI用rootを別端末で操作する場合も同じ入力を非公開経路で引き継ぐ。
-
-```bash
-terraform -chdir=infra/ci-plan plan -input=false -out=detach-lab.tfplan
-terraform -chdir=infra/ci-plan show -no-color detach-lab.tfplan
-```
-
-削除対象が学習用リソースの読み取り権限と、そのための専用ロール定義だけであることを確認する。対象の正は[CIの権限構成](terraform-plan-review.md)と参照先のTerraformに置く。CI Identity・OIDC・Subscription名前確認権限・stateの読み取りとlease権限は保持する。これらにも変更が出る場合は停止する。CI未構築の場合だけ、この切り離しは不要である。
-
-#### 学習用rootの破棄plan
-
-```bash
-terraform -chdir=infra/terraform plan -destroy -input=false -out=destroy.tfplan
-terraform -chdir=infra/terraform show -no-color destroy.tfplan
-```
-
-CI解除planと学習用destroy planを別々に確認し、対象が`Personal-Sandbox`に限定されることを照合する。初期構築の7件という数だけで判断せず、現在の構成・データ・退避結果を提示する。生のplanやstateを公開Issue・PRへ貼り付けない。
-
-**ここで一度止まり、削除対象とデータ消失について明示的な承認を受けてから、次へ進む。準備修正のPR承認・マージは削除の承認ではない。**
-
-#### 承認後の適用と確認
-
-CI接続済みの場合は先に保存した`detach-lab.tfplan`を適用し、`lab_access_enabled=false`のままCI用rootの再planが差分なしになることを確認する。その後に学習用rootを破棄する。
-
-```bash
-terraform -chdir=infra/ci-plan apply detach-lab.tfplan
-terraform -chdir=infra/ci-plan plan -input=false -detailed-exitcode
-```
-
-各planの適用直前にcode・入力・対応するstate、対象リソースとデータを再確認する。CI権限解除後も学習用planが承認対象と一致することを照合し、変化があれば古いplanを適用せず、作り直して再確認・承認する。適用に失敗した場合もstateを削除せず再planする。
-
-```bash
-terraform -chdir=infra/terraform apply destroy.tfplan
-az group exists --subscription "${ARM_SUBSCRIPTION_ID:?}" --name "${LAB_RESOURCE_GROUP:?}"
-set -o pipefail
-terraform -chdir=infra/terraform state pull \
-  | jq -e '[.resources[]? | select(.mode == "managed") | .instances[]?] | length == 0'
-```
-
-Resource Groupが存在せず（`az group exists`は`false`）、学習用stateの管理対象リソースが0件（最後の照合は`true`・終了コード0）になったことを確認する。`state list`にはdata sourceも出るため、空の出力を条件にせず`mode == "managed"`の実体を数える。CI用rootの再planも差分なしであることを確認し、保持するstate・過去バージョン・保護設定・CI Identityが残っていることを照合する。完了記録には実施時刻と検証結果を残す。学習用rootは定義を残しているため、通常のplanを実行すると再作成予定になる。削除後の差分なし確認には使わない。
-
-#### 中止時の復旧
-
-管理外リソースの検出や削除承認の見送りで後片付けを中止した場合は、中止理由と適用済みの操作を記録し、次のように分岐する。復旧中もworkflowは休止したままとし、保存済みの`detach-lab.tfplan`と`destroy.tfplan`は以後適用しない。
-
-- **学習用rootの削除を開始していない場合**: Resource Group・Storage・Filesystem・データとremote stateが残っていることを確認し、CIの復旧へ進む。
-- **学習用rootの削除を開始した場合、または現状を確認できない場合**: 一部削除やstateとの不整合の可能性があるため、Resource Groupの存在だけで再開しない。ここで本節の手順を終了し、以下のCI権限復旧・workflow再有効化は実施しない。実リソース・データ・stateを照合し、[再構築とCI再開は別作業](#再構築とci再開は別作業)として復旧範囲の確認・承認へ引き渡す。
-
-以下のCI復旧は、学習用rootの削除未開始・環境の残存確認済み・CI接続済みの場合だけ行う。CI未構築の場合は本節の残りを実施せず、中止記録を残して終了する。Git管理外の`infra/ci-plan/cleanup.auto.tfvars`を作成していれば`lab_access_enabled = true`へ戻す。他の端末へ引き継いだ入力も揃える。CI権限解除をまだ適用していない場合も、次回のplanが解除予定に戻らないように入力を確認する。
-
-```bash
-terraform -chdir=infra/ci-plan plan -input=false -out=reattach-lab.tfplan
-terraform -chdir=infra/ci-plan show -no-color reattach-lab.tfplan
-```
-
-解除未適用なら変更なし、解除済みなら[CIの権限構成](terraform-plan-review.md)のうち失われた学習用の権限と専用ロール定義だけが作成対象であることを確認する。Identity・OIDC・stateへの権限などにも変更が出た場合は停止する。権限の再作成が必要な場合は、この復旧planを提示して別途承認を受け、適用直前にcode・入力・state・対象を再照合してから`terraform -chdir=infra/ci-plan apply reattach-lab.tfplan`を実行する。CI用rootの再planが差分なしであることを確認する。
-
-学習用rootの通常planで実環境stateを参照できることを確認し、差分があれば理由を確認する（復旧のために自動適用しない）。[PRでの動作と確認](terraform-plan-review.md#prでの動作と確認)に従ってCI入力・権限・Environment設定を照合し、今回休止したworkflowの再開承認を得てから実行する。
-
-```bash
-gh workflow enable terraform-plan.yml --repo Ries630/AzureDataTransformationLab
-gh api repos/Ries630/AzureDataTransformationLab/actions/workflows/terraform-plan.yml --jq .state
-```
-
-`active`を確認して再開日時を記録する。有効化だけではPR planの成功確認にはならないため、次の実行条件を満たすPR更新でEnvironment承認後のplanと公開コメントを確認する。それまでは「workflow再有効化済み・実plan未確認」と記録する。中止を理由に自動で権限を再作成したりworkflowを再開したりしない。
-
-#### 再構築とCI再開は別作業
-
-現在の`backend.mjs init`は管理対象0件のstateを拒否する。破棄後の再構築では、削除を承認した時点で保持した空stateのベースラインだけを使い、stateを削除したり空state拒否を緩めたりしない。ベースラインは任意の空stateを新規作成して代用せず、承認済みの後片付けで作成された`$LAB_EMPTY_STATE_BASELINE`を指定する。
-
-再構築の準備は次のように行う。`prepare-rebuild`は保存先、保護設定、初期化済みbackend、ベースラインのSubscriptionとstate属性を照合するだけで、Azureへのstate転送やリソース変更を行わない。
-
-```bash
-node scripts/terraform/backend.mjs prepare-rebuild infra/terraform "$LAB_EMPTY_STATE_BASELINE"
-terraform -chdir=infra/terraform plan -var=functions_enabled=false -out=rebuild.tfplan
-terraform -chdir=infra/terraform show -no-color rebuild.tfplan
-```
-
-このplanで学習用Storageの再作成内容と費用を確認し、明示的な承認後にだけ`rebuild.tfplan`を適用する。適用後にサンプルCSVと4つのFilesystemを復元し、通常のplanで差分を確認する。`functions_enabled=true`を指定した事前のpreflight planは、ベースラインとFunction追加分を同時に表示する参照用であり、Storage復元後の適用には使わず、復元後のstateからFunction用planを作り直す。
-
-Function用planでは、秘密の`phase2.auto.tfvars`へ`functions_enabled=true`を保存してから入力・権限・対象を照合する。CIの読み取り権限復旧とPR planのworkflow再開は、Function基盤の再構築とは別の承認作業として扱う。
+学習環境を削除する手順と、削除後に再構築する手順は[後片付けと再構築](lab-teardown.md)にある。Phase 1を終えたら削除する、という手順ではない。削除すると、次のPhaseへ進む前に再構築が必要になる。
 
 ## Phase 2: Azure Functionsによる入力検証
 
-Python Functionを実装し、検証ロジックをAzure Functions固有コードから分離してテストする。HTTP契約とCSV検証規則の正は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)に置く。読み方と演習は[Phase 2の解説](tutorials/phase-2-validation.md)を参照する。Azure適用、実動作確認、CI接続の復旧は、それぞれのplanを確認して別途承認を得た後に行う。
+PythonのFunctionでCSVを検証する。検証ロジックはAzure Functions固有のコードから分離し、Azureなしでテストできるようにする。HTTP契約とCSV検証規則の正は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)、コードの読み方と演習は[Phase 2の解説](tutorials/phase-2-validation.md)にある。Azureへの適用、Azure上での動作確認、CI接続の復旧は、それぞれplanを確認して別々に承認を得てから行う。
 
 ### 1. ローカルの公開境界を確認する
 
-次の3つの責務を分けて実装する。
+次の3つの責務を、別々のファイルに実装する。
 
 | ファイル | 学習する責務 |
 |---|---|
 | `functions/validator/validation.py` | Azure SDKを使わずにCSVのバイト列を判定する |
 | `functions/validator/storage.py` | Managed Identityで`landing`のBlobを読み取り、ETagを照合する |
-| `functions/validator/function_app.py` | HTTP入力、検証処理、StorageエラーのHTTP応答を接続する |
+| `functions/validator/function_app.py` | HTTP入力、検証処理、StorageエラーをHTTP応答へつなぐ |
 
-まず`validation.py`の公開関数をローカルから呼び出し、正常なサンプルと不正なサンプルの判定・エラー位置・エラー件数を確認する。HTTP 200で返る`INVALID`と、読み取り失敗などの5xxを別の状態として扱うことが、このPhaseの重要な学習点である。
+まず`validation.py`の公開関数をローカルから呼び出し、正常なサンプルと不正なサンプルについて、判定、エラーの位置、エラーの件数を確かめる。このPhaseの中心となる学習点は、HTTP 200で返る`INVALID`（データの不備）と、読み取り失敗などの5xx（処理の失敗）を別の状態として扱うことである。
 
 ### 2. ローカルで実行する
 
-リポジトリルートで次を実行する。
+リポジトリのルートで、テストとサンプルの検証を実行する。
 
 ```bash
 uv run --locked functions/validator/function_app.py test
@@ -373,11 +292,11 @@ uv run --locked functions/validator/function_app.py sample samples/valid/orders_
 uv run --locked functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
 ```
 
-`test_pure.py`はAzure SDKを使わずに公開関数を確認し、`sample`ではVALIDとINVALIDの構造化結果を読む。既存の不正サンプルはコピーしてから1項目ずつ変更し、どのエラーが消え、どのエラーが残るかを記録する。CSVの規則は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)を参照する。
+`test_pure.py`はAzure SDKを使わずに公開関数を確かめる。`sample`では、VALIDとINVALIDの構造化された結果を読む。続けて、不正サンプルのコピーを1項目ずつ書き換え、どのエラーが消え、どのエラーが残るかを記録する。CSVの規則は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)を参照する。
 
-以下の実CSVを使うローカルHTTP確認は、学習用Storageの再構築とサンプル配置後に行う。未復元の場合は上のテスト・サンプル実行を済ませ、[基盤のplan](#5-azureの基盤をplanで確認する)へ進み、Storage復元後に本節へ戻る。
+ここから先のローカルHTTP確認は、学習用Storageの`landing/orders_v1.csv`を実際に読む。後片付けでStorageを削除している場合は、上のテストとサンプル実行だけを済ませて[基盤のplan](#5-azureの基盤をplanで確認する)へ進み、Storageを再構築してサンプルCSVを配置してから本節に戻る。
 
-`serve`を起動する前に、Functionsホストの状態保存先としてAzuriteを起動する。ローカル設定を作成して`LAB_STORAGE_ACCOUNT_NAME`を実際の学習用Storage名へ変更し、`AZURE_CLIENT_ID`は設定しない。ローカルの`storage.py`はAzure CLIのログインを使うため、UAIのClient IDを指定すると接続経路が変わる。
+Functionsホストは状態の保存先を必要とするので、`serve`の前にAzuriteを起動する。ローカル設定ファイルを作り、`LAB_STORAGE_ACCOUNT_NAME`を実際の学習用Storage名に書き換える。
 
 ```bash
 docker compose -f functions/validator/compose.local.yml up -d
@@ -387,13 +306,13 @@ unset AZURE_CLIENT_ID
 az account show --subscription Personal-Sandbox --query '{name:name,state:state,userType:user.type}' -o json
 ```
 
-`userType`が`user`であることと対象Subscriptionを確認してから、別のターミナルでFunctionsホストを起動する。
+`AZURE_CLIENT_ID`は設定しない。ローカルの`storage.py`はAzure CLIのログインで認証するので、User Assigned Managed IdentityのClient IDを指定すると接続方法が変わってしまう。`userType`が`user`で、対象のSubscriptionであることを確かめてから、別のターミナルでFunctionsホストを起動する。
 
 ```bash
 uv run --locked functions/validator/function_app.py serve
 ```
 
-ローカルHTTPの確認には、Azure CLIログインで取得したETagを使う。Function keyはローカルでは不要である。
+ローカルのHTTP呼び出しでは、Azure CLIのログインで取得したETagを使う。ローカルではFunction keyは不要である。
 
 ```bash
 export LAB_STORAGE_ACCOUNT_NAME="$(jq -r '.Values.LAB_STORAGE_ACCOUNT_NAME' functions/validator/local.settings.json)"
@@ -408,20 +327,20 @@ jq -n --arg etag "$LAB_ETAG" \
 
 ### 3. 依存関係をロックする
 
-依存関係の正は`function_app.py`のPEP 723インラインメタデータと、隣接するロックファイルに置く。
+依存関係の正は、`function_app.py`に書いたPEP 723のインラインメタデータと、隣に置くロックファイルである。
 
 ```bash
 uv lock --script functions/validator/function_app.py
 uv run --locked functions/validator/function_app.py test
 ```
 
-`uv lock --script`で作成されるロックファイルをレビューし、`--locked`付きの実行でロックが変更されないことを確認する。`requirements.txt`と`pyproject.toml`は作成しない。
+`uv lock --script`が作るロックファイルをレビューし、`--locked`付きで実行してもロックが変わらないことを確かめる。`requirements.txt`と`pyproject.toml`は作らない。
 
 ### 4. Azure Functions用の依存関係を生成する
 
-Azure FunctionsのホストはPEP 723を依存関係のインストール手順として解釈しないため、Linux x86_64・Python 3.14環境で、ロックされた依存関係を`.python_packages/lib/site-packages`へ配置する。生成処理は`scripts/validator/package.py`へ集約し、ハッシュ検証とwheel限定でインストールする。
+Azure FunctionsのホストはPEP 723のメタデータを読んで依存関係をインストールしない。そこで、Linux x86_64・Python 3.14の環境でロックどおりの依存関係を`.python_packages/lib/site-packages`へ配置し、そのディレクトリごと発行する。生成処理は`scripts/validator/package.py`にまとめてあり、ハッシュを検証しながらwheelだけをインストールする。
 
-配置先はリポジトリ内の`.artifacts/`配下に作り、実行のたびに新しい名前を指定する。Macでは固定Linux x86_64コンテナーを使い、Linux x86_64では`--docker`を省略する。
+配置先はリポジトリ内の`.artifacts/`の下に、実行のたびに新しい名前で指定する。Macでは固定したLinux x86_64コンテナーで生成し、Linux x86_64では`--docker`を省く。
 
 ```bash
 # Mac
@@ -431,13 +350,17 @@ uv run scripts/validator/package.py --docker .artifacts/validator-build-1
 uv run scripts/validator/package.py .artifacts/validator-build-1
 ```
 
-第1引数の配置先はまだ存在してはいけない。生成後に依存パッケージ、`host.json`、`.funcignore`、`package-manifest.json`を確認する。同じロックで再生成するときは別名（例: `validator-build-2`）を使い、manifestの依存名・バージョンとlock SHA256を比較する。ZIPのバイト列一致までは保証しない。Mac上で直接依存パッケージを生成せず、CIでも同じLinux生成処理を使う。
+第1引数の配置先は、まだ存在しないパスでなければならない。生成後は、依存パッケージ、`host.json`、`.funcignore`、`package-manifest.json`がそろっていることを確かめる。
+
+同じロックから再生成するときは`validator-build-2`のような別名を使い、2つのmanifestで依存の名前・バージョンとロックのSHA256を比べる。ZIPのバイト列までは一致しない。Mac上で依存パッケージを直接生成せず、CIでも同じLinux用の生成処理を使う。
 
 ### 5. Azureの基盤をplanで確認する
 
-学習用StorageはIssue #22の後片付けで削除済みである。保持している空のremote stateを使った再構築は、通常の`backend.mjs init`が管理対象0件のstateを拒否する前提を維持し、別のplan・適用承認として扱う。空state拒否を緩めたりstateを削除したりしない。
+後片付けで学習用Storageを削除している場合は、先に[後片付けと再構築](lab-teardown.md#再構築)の手順でStorageを再構築する。再構築は、このPhaseとは別のplanと適用承認として扱う。
 
-再構築後に、Function用のTerraform planを作成する。対象と実行時設定は[アーキテクチャ](architecture.md#storageと実行環境)、Storage構成の判断理由は[ADR-0004](adr/0004-separate-function-host-storage.md)、スケール上限の判断理由は[ADR-0007](adr/0007-set-flex-max-instance-count.md)を参照する。Azure CLIで対象リージョンのランタイム提供状況と必要なResource Providerの登録状態を確認し、登録が必要なら対象を提示して承認後に登録する。
+Storageがある状態で、Function用のTerraform planを作る。作成対象と実行時の設定は[アーキテクチャ](architecture.md#storageと実行環境)、Storage構成の判断理由は[ADR-0004](adr/0004-separate-function-host-storage.md)、スケール上限の判断理由は[ADR-0007](adr/0007-set-flex-max-instance-count.md)にある。
+
+plan の前に、対象リージョンでランタイムが提供されているかと、必要なResource Providerの登録状態をAzure CLIで確かめる。登録が必要なら、対象を提示して承認を受けてから登録する。
 
 ```bash
 # phase2.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
@@ -451,11 +374,11 @@ terraform -chdir=infra/terraform show -no-color phase2.tfplan
 )
 ```
 
-上のブロックは入力ファイルを新規作成する初回用であり、既存ファイルがあればplanを実行せず終了する。既存ファイルを確認・編集した場合は、planとshowの2行だけを実行する。planでは対象Subscription、Resource Group、Storage Account、ロール割り当て、アプリ設定、費用見積もり、後片付け方法を照合する。Azureリソースの作成・変更には、このplanを提示したうえで明示的な承認を得る。
+このブロックの動きは[Terraformの方針](#terraformの方針)で説明している。planでは、対象のSubscription、Resource Group、Storage Account、ロール割り当て、アプリ設定を照合し、費用の見積もりと後片付けの方法を添えて提示する。Azureリソースの作成・変更には、このplanに対する明示的な承認が必要である。
 
 ### 6. 発行して動作を確認する
 
-基盤の適用が承認された後、生成処理が作った配置先をFunctionプロジェクトとして`--no-build`で発行する。配置先には`function_app.py`、`validation.py`、`storage.py`、`host.json`、`.funcignore`、`.python_packages`が含まれる。
+基盤の適用が承認されたら、[依存関係の生成](#4-azure-functions用の依存関係を生成する)で作った配置先をFunctionプロジェクトとして`--no-build`で発行する。配置先には`function_app.py`、`validation.py`、`storage.py`、`host.json`、`.funcignore`、`.python_packages`が含まれる。
 
 ```bash
 (
@@ -471,25 +394,29 @@ func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRI
 )
 ```
 
-`--python`は配置先の言語を明示する。PEP 723と事前構築済みパッケージを使う配置先では、Core Toolsが言語を自動判定できないため指定する。
+`--python`で配置先の言語を明示している。PEP 723と事前に生成したパッケージを使う配置先では、Core Toolsが言語を自動で判定できないためである。
 
-Function keyを付けて、正常・不正サンプルとETag不一致、取得障害を呼び出し、[HTTP契約](architecture.md#http契約)どおりの結果を確認する。Functionが入力CSVをコピー・更新していないことをStorage側で照合する。
+発行後は、Function keyを付けて次の呼び出しを行い、結果が[HTTP契約](architecture.md#http契約)どおりかを確かめる。
 
-ローカルとAzureで同じ入力を使い、判定結果とエラー位置が一致することを記録する。発行後のTerraform planに意図しない差分がないこと、同じロックからLinuxパッケージを再生成できることを確認する。
+- 正常なサンプルと不正なサンプル
+- ETagが一致しない場合
+- Storageからの取得に失敗する場合
+
+あわせて、FunctionがCSVをコピーも更新もしていないことをStorage側で照合する。ローカルとAzureに同じ入力を渡し、判定結果とエラーの位置が一致することを記録する。最後に、発行後のTerraform planに意図しない差分がないことと、同じロックからLinux用パッケージを再生成できることを確かめる。
 
 ### Phase 2の完了条件
 
-- ローカルテストが成功し、正常なCSVと不正なCSVの構造化結果を説明できる。
+- ローカルテストが成功し、正常なCSVと不正なCSVの構造化された結果を説明できる。
 - `validation.py`をAzure SDKなしでテストでき、`function_app.py`と`storage.py`の責務を説明できる。
-- PEP 723のメタデータと隣接ロックから、Ubuntu 24.04でAzure Functions用パッケージを生成できる。
-- 承認されたTerraform planどおりに基盤を構築し、Function key付きのHTTP呼び出しでローカルと同じ結果を確認できる。
+- PEP 723のメタデータと隣接するロックから、Ubuntu 24.04でAzure Functions用のパッケージを生成できる。
+- 承認されたTerraform planどおりに基盤を構築し、Function key付きのHTTP呼び出しでローカルと同じ結果を得られる。
 - 業務Reject（HTTP 200・`INVALID`）とシステム障害（HTTP 5xx）を区別できる。
 
 ADF Pipeline、`validated`・`rejected`へのコピー、Mapping Data Flow、監視通知はPhase 3以降で扱う。
 
 ## Phase 3: Data Factory Pipeline
 
-ADF Pipelineを親オーケストレーターとして構築し、`landing`へのCSV投入から検証、振り分け、変換までを自動で実行する。処理の流れと異常系の正は[アーキテクチャ](architecture.md#azure側の処理フロー)に置く。読み方は[Phase 3の解説](tutorials/phase-3-data-factory.md)を参照する。
+ADF Pipelineを親オーケストレーターとして構築し、`landing`にCSVが置かれてから、検証、振り分け、変換までを自動で進める。処理の流れと異常系の正は[アーキテクチャ](architecture.md#azure側の処理フロー)、仕組みの解説は[Phase 3の解説](tutorials/phase-3-data-factory.md)にある。
 
 ```text
 Storage Event Trigger（landingの.csv）
@@ -508,7 +435,7 @@ Switch
 
 ### 1. Providerを登録する
 
-Data Factoryの作成には`Microsoft.DataFactory`、Storage Event Triggerには`Microsoft.EventGrid`のResource Providerが必要である。登録状態を確認し、未登録の場合だけ、前準備として承認を受けてから登録する。
+Data Factoryの作成には`Microsoft.DataFactory`、Storage Event Triggerには`Microsoft.EventGrid`のResource Providerが必要である。登録状態を確かめ、未登録の場合だけ、前準備として承認を受けてから登録する。
 
 ```bash
 az provider show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
@@ -521,11 +448,13 @@ az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Micro
 az provider register --subscription "${ARM_SUBSCRIPTION_ID:?}" --namespace Microsoft.EventGrid
 ```
 
-登録は非同期に進む。`registrationState`が`Registered`になったことを確認してから次へ進む。
+登録は非同期に進む。`registrationState`が`Registered`になってから次へ進む。
 
 ### 2. Data Factory基盤をplanで確認する
 
-Data Factoryは`data_factory_enabled`で有効にする。PipelineがFunctionを呼び出すため、Phase 2の`phase2.auto.tfvars`（`functions_enabled = true`）を残したまま、Phase 3用の入力ファイルを追加してplanを作る。Phase 2のplanを先に適用してFunction Appを作成済みにしておく。未適用のまま`data_factory_enabled = true`でplanすると、Linked ServiceのFunctionキー読み取りがエラーになる（[ADR-0010](adr/0010-require-function-applied-before-data-factory.md)）。
+Data Factoryは`data_factory_enabled`で有効にする。PipelineがFunctionを呼び出すので、Phase 2の`phase2.auto.tfvars`（`functions_enabled = true`）を残したまま、Phase 3用の入力ファイルを追加する。
+
+このplanの前に、Phase 2のplanを適用してFunction Appを作っておく。Function Appがないまま`data_factory_enabled = true`でplanすると、Linked ServiceがFunctionのキーを読み取れずにエラーになる（[ADR-0010](adr/0010-require-function-applied-before-data-factory.md)）。
 
 ```bash
 # phase3.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
@@ -539,52 +468,50 @@ terraform -chdir=infra/terraform show -no-color phase3.tfplan
 )
 ```
 
-上のブロックは入力ファイルを新規作成する初回用である。既存ファイルがあればplanを実行せずに終了するため、内容を確認・編集した後にplanとshowの2行だけを実行する。
-
 planでは次を照合する。
 
-- 対象Subscription（`Personal-Sandbox`）とResource Group
-- Data FactoryとData Flow用IR（japaneast・General 8コア・TTL 0）
+- 対象のSubscription（`Personal-Sandbox`）とResource Group
+- Data FactoryとData Flow用のIR（japaneast・General 8コア・TTL 0）
 - ADFのManaged Identityの権限（`landing`は読み取り、`validated`・`rejected`・`output`は書き込み）
-- Triggerの対象範囲（`landing`の`.csv`、空Blobは無視）
-- 費用の見積もりと後片付け方法
+- Triggerの対象範囲（`landing`の`.csv`だけ、空Blobは無視）
+- 費用の見積もりと後片付けの方法
 
-Data Flowは`AutoResolve`のIRではなく専用IRで実行する。実行リージョンと課金単位をplanの時点で確定させるためである。Pipelineの同時実行数は1に固定し、Data Flowのクラスターが並行して起動して費用が増えることを防ぐ。
+Data Flowは、実行場所をAzureが選ぶ`AutoResolve`のIRではなく、専用のIRで実行する。実行リージョンと課金の単位をplanの時点で確定させるためである。また、Pipelineの同時実行数を1に固定し、Data Flowのクラスターが並行して起動して費用が膨らむことを防ぐ。
 
 ### 3. 承認されたplanを適用し、動作を確認する
 
-planの内容、費用、後片付け方法を提示し、明示的な適用承認を受けてから適用する。Triggerは適用した時点で有効になるため、適用後は`landing`へのCSV投入がすぐにPipelineを起動する。
+planの内容、費用、後片付けの方法を提示し、明示的な適用承認を受けてから適用する。Triggerは適用した時点で有効になるので、それ以降に`landing`へCSVを置くと、すぐにPipelineが起動する。
 
-VALIDのCSVを1本処理するたびにData Flowのクラスターが起動して課金されるため、検証の実行は5〜8回程度に抑える。確認するのは次の4点である。
+VALIDのCSVを1本処理するたびにData Flowのクラスターが起動し、課金される。検証の実行は5〜8回程度に抑え、次の4点を確かめる。
 
 | 確認すること | 期待する結果 |
 |---|---|
-| 正常なCSVを投入する | `validated`に原本、`output`に変換結果が作られ、Pipelineが成功する |
-| 不正なCSVを投入する | `rejected`に原本と`<path>.validation.json`が作られ、Mapping Data Flowを実行せずにPipelineが成功する |
+| 正常なCSVを投入する | `validated`に原本、`output`に変換結果ができ、Pipelineが成功する |
+| 不正なCSVを投入する | `rejected`に原本と`<path>.validation.json`ができ、Mapping Data Flowを実行せずにPipelineが成功する |
 | `validated`・`output`へ書き込む、`landing`へ`.csv`以外のファイルを置く | Pipelineが起動しない |
 | Functionを停止する、存在しないパスでPipelineを実行する | Pipelineが失敗する |
 
 ### Phase 3の完了条件
 
 - VALIDとINVALIDが異なる経路を通り、INVALIDではMapping Data Flowを実行しないことを説明できる。
-- Triggerの対象範囲と、Activity間のデータの受け渡しを説明できる。
-- ADFがStorageへはManaged Identity、FunctionへはFunctionキーで接続する構成を説明できる。
-- 障害時にPipelineが失敗経路へ進むことを確認できる。
+- Triggerの対象範囲と、Activity間で値を受け渡す方法を説明できる。
+- ADFがStorageへはManaged Identityで、FunctionへはFunctionキーで接続する構成を説明できる。
+- 障害時にPipelineが失敗の経路へ進むことを確認できる。
 
 ## Phase 4: Schema Evolution
 
-列と型が変わったCSVに対して、どの層で何を検出し、何を受け入れるかを比較する。読み方と比較結果は[Phase 4の解説](tutorials/phase-4-schema-evolution.md)に置く。
+列や型が変わったCSVに対して、どの層が何を検出し、何を受け入れるかを比較する。比較結果と読み方は[Phase 4の解説](tutorials/phase-4-schema-evolution.md)にある。
 
-Strictの比較対象は本番の`df_transform_orders`（`allowSchemaDrift: false`・`validateSchema: true`）とし、変更しない。比較用に次の3つのData Flowを`schema_evolution_lab_enabled`で追加する。Pipeline・Triggerからは参照しない。
+比較するData Flowは次の4つである。Strictの基準には、本番の`df_transform_orders`（`allowSchemaDrift: false`・`validateSchema: true`）を変更せずに使う。残りの3つは比較用として`schema_evolution_lab_enabled`で追加し、Pipeline・Triggerからは参照しない。
 
 | Data Flow | 設定 | 確かめること |
 |---|---|---|
-| `df_transform_orders` | Strict | 宣言と異なる入力で失敗するか |
+| `df_transform_orders`（本番） | Strict | 宣言と異なる入力で失敗するか |
 | `df_schema_tolerant` | `validateSchema: false` | 宣言外の列が無視されるか |
 | `df_schema_drift` | `Allow schema drift`、列名のルールで出力へ通す | 宣言外の列がstringのまま出力に残るか |
 | `df_schema_drift_infer` | 上記＋`Infer drifted column types` | 宣言外の列の型が値から推論されるか |
 
-比較には[サンプルデータ](#サンプルデータ)のschema-evolutionの5本と`orders_v1.csv`を使う。Functionが各サンプルを受け入れるか拒否するかは`tests/validator/test_schema_evolution_samples.py`で確認する。
+入力には、[サンプルデータ](#サンプルデータ)のschema-evolutionの5本と`orders_v1.csv`を使う。Functionが各サンプルを受け入れるか拒否するかは、`tests/validator/test_schema_evolution_samples.py`で確かめる。
 
 ### 1. 比較用Data Flowをplanで確認する
 
@@ -600,11 +527,13 @@ terraform -chdir=infra/terraform show -no-color phase4.tfplan
 )
 ```
 
-planでは、Data Flow 3つの追加だけで、既存のPipeline・Trigger・`df_transform_orders`に差分がないことを照合する。Data Flowの定義自体には費用がかからない。既存リソースに差分が出る場合、その差分はPhase 4の変更によるものではない。`-target='azurerm_data_factory_data_flow.schema_evolution'`で比較用Data Flowだけのplanを作り直して適用し、既存の差分は別に扱う。
+planでは、比較用のData Flow 3つが追加されるだけで、既存のPipeline・Trigger・`df_transform_orders`に差分がないことを照合する。Data Flowは定義しただけでは費用がかからない。
+
+既存のリソースに差分が出た場合、その差分はPhase 4の変更が原因ではない。その場合は`-target='azurerm_data_factory_data_flow.schema_evolution'`で比較用Data Flowだけのplanを作り直して適用し、既存の差分は別に扱う。
 
 ### 2. 比較用の入力を配置する
 
-比較用のCSVは`validated/schema-lab/input/`に置く。`landing`に置くとTriggerがPipelineを起動するためである。ADFのManaged Identityは`validated`を読み書きできる。
+比較用のCSVは`validated/schema-lab/input/`に置く。`landing`に置くとTriggerがPipelineを起動してしまうためである。ADFのManaged Identityは`validated`を読み書きできる。
 
 ```bash
 for sample in samples/valid/orders_v1.csv samples/schema-evolution/*.csv; do
@@ -616,36 +545,38 @@ done
 
 ### 3. Debugで設定とサンプルの組み合わせを比較する
 
-Mapping Data FlowのDebugは検証直前に有効化し、終了後すぐ無効化する。Debug中は8 vCoreのクラスターが稼働し、General Purposeのjapaneastの従量単価（2026-10-12時点で1 vCore時間あたり0.30225 USD）で1時間あたり約2.42 USDかかる。1セッションで4つのData Flowと6本のサンプルをまとめて確認し、目安を1時間以内とする。
+Mapping Data FlowのDebugは、検証の直前に有効にし、終わったらすぐ無効にする。Debug中は8 vCoreのクラスターが動き続け、General Purpose・japaneastの従量単価（2026-10-12時点で1 vCore時間あたり0.30225 USD）で、1時間あたり約2.42 USDかかる。4つのData Flowと6本のサンプルを1回のセッションでまとめて確かめ、1時間以内に終えることを目安にする。
 
 1. ADF Studioで`Data flow debug`を有効にし、IRに`ir-<storage_account_name>`を選ぶ。
-2. 各Data Flowの`Debug Settings`で、source1のパラメーターを`fileSystem=validated`、`folderPath=schema-lab/input`、`fileName=<サンプル名>`にする。sink1は`fileSystem=validated`、`folderPath=schema-lab/output`、`fileName`を空欄にする。Data Previewではsinkへ書き込まない。
-3. sourceと最後の変換の`Data preview`と`Inspect`で、失敗の有無、列の一覧と型、行数を記録する。
-4. 終了後すぐ`Data flow debug`を無効にする。
+2. 各Data Flowの`Debug Settings`で、パラメーターを次のように設定する。
+   - source1：`fileSystem=validated`、`folderPath=schema-lab/input`、`fileName=<サンプル名>`
+   - sink1：`fileSystem=validated`、`folderPath=schema-lab/output`、`fileName`は空欄（Data Previewはsinkへ書き込まない）
+3. sourceと最後の変換で`Data preview`と`Inspect`を開き、失敗の有無、列の一覧と型、行数を記録する。
+4. 終わったらすぐ`Data flow debug`を無効にする。
 
-ADF Studioで設定を編集した場合は発行（Publish）しない。比較する設定の正はTerraformの定義とする。
+ADF Studioで設定を編集しても、発行（Publish）はしない。比較する設定の正はTerraformの定義である。
 
 ### 4. Pipeline全体で拒否した層を確認する
 
-`orders_v2.csv`、`orders_missing_required.csv`、`orders_amount_type_change.csv`の3本を`landing`へ投入し、Pipeline結果と出力先を確認する。Data Flowまで進むのは、Functionが受け入れる`orders_v2.csv`だけである。
+`orders_v2.csv`、`orders_missing_required.csv`、`orders_amount_type_change.csv`の3本を`landing`へ投入し、Pipelineの結果と出力先を確かめる。このうちData Flowまで進むのは、Functionが受け入れる`orders_v2.csv`だけである。
 
 | 投入するCSV | 確認すること |
 |---|---|
 | `orders_v2.csv` | Functionが受け入れた後、本番のStrictなData Flowが成功するか失敗するか |
-| `orders_missing_required.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONが作られる |
-| `orders_amount_type_change.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONが作られる |
+| `orders_missing_required.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONができる |
+| `orders_amount_type_change.csv` | Functionが拒否し、`rejected`に原本と検証結果JSONができる |
 
-`orders_v2.csv`がPipeline失敗になる場合は、Functionの契約（追加列を許容）とData Flowの設定の不一致として結果に記録し、修正は別Issueで扱う。
+`orders_v2.csv`でPipelineが失敗した場合は、Functionの契約（追加列を許容する）とData Flowの設定が食い違っていることを結果として記録する。修正は別のIssueで扱う。
 
 ### 5. 後片付けする
 
-`phase4.auto.tfvars`を`schema_evolution_lab_enabled = false`にしてplanを作り、Data Flow 3つの削除だけであることを確認してから適用する。`validated/schema-lab/`と比較の出力も削除する。
+`phase4.auto.tfvars`を`schema_evolution_lab_enabled = false`に書き換えてplanを作り、比較用Data Flow 3つの削除だけであることを確かめてから適用する。`validated/schema-lab/`と比較の出力も削除する。
 
 ### Phase 4の完了条件
 
-- 4つの設定とサンプルの組み合わせで、失敗・列の無視・列の通過を比較表で説明できる。`Infer drifted column types`による推論された型は、Debugのpreviewでは判別できなかったことを記録している。
-- 必須列の欠落と型変更を、Pipeline上のどの層で拒否したかを説明できる。
-- スキーマの推論と変更の受け入れが別の判断であることを、比較結果をもとに説明できる。
+- 4つの設定とサンプルの組み合わせについて、失敗・列の無視・列の通過を比較表で説明できる。`Infer drifted column types`で推論された型をDebugのpreviewでは判別できなかったことを記録している。
+- 必須列の欠落と型の変更を、Pipelineのどの層で拒否したかを説明できる。
+- スキーマの推論と、変更を受け入れるかどうかの判断が別のものであることを、比較結果をもとに説明できる。
 
 ## Phase 5: Monitoring
 
@@ -657,30 +588,24 @@ ADF Studioで設定を編集した場合は発行（Publish）しない。比較
 - Action Groupによるメール通知
 - Azure BudgetとCost Alert
 
-意図的にPipelineを失敗させ、システム障害ではメール通知され、業務Rejectでは通知されないことを確認する。
+Pipelineを意図的に失敗させ、システム障害ではメールが届き、業務Rejectでは届かないことを確かめる。
 
 ## Phase 6: IdempotencyとRetry
 
-同じファイルのイベント配送と手動再実行を試す。
-
-次を決定して検証する。
+同じファイルについて、イベントの配信と手動の再実行を試す。そのうえで、次を決めて検証する。
 
 - 処理識別子
 - 処理状態の保存先
 - 同時実行時の排他制御
-- 出力ファイル名と上書き方針
+- 出力ファイル名と上書きの方針
 - 失敗後のRetry
 - 正常完了後の再実行
 
-完了条件は、同一入力を複数回処理しても二重出力や不整合が発生しないことである。
+完了条件は、同じ入力を複数回処理しても、二重出力や不整合が起きないことである。
 
 ## Phase 7: IaCの整理
 
-PortalまたはADF Studioで手動作成した設定を、可能な範囲でTerraformまたはGit管理された定義へ戻す。
-
-主要インフラをTerraformから再構築できることを確認する。
-
-Functionコードの発行はTerraformから分離してよい。
+PortalやADF Studioで手動作成した設定を、できる範囲でTerraformかGit管理の定義へ戻し、主要インフラをTerraformから再構築できることを確かめる。Functionコードの発行は、Terraformから分離してよい。
 
 ## サンプルデータ
 
@@ -694,6 +619,4 @@ Functionコードの発行はTerraformから分離してよい。
 | 必須列の欠落 | [`samples/schema-evolution/orders_missing_required.csv`](../samples/schema-evolution/orders_missing_required.csv) |
 | `amount`の型変更 | [`samples/schema-evolution/orders_amount_type_change.csv`](../samples/schema-evolution/orders_amount_type_change.csv) |
 
-Schema Evolutionでは、新しい列を通す、無視する、Validation Errorにする場合を比較する。
-
-必須列の欠落と`amount`の型変更では、スキーマ検出と変更受け入れが別の判断であることを確認する。
+Schema Evolutionの比較では、新しい列を通す場合、無視する場合、Validation Errorにする場合を比べる。必須列の欠落と`amount`の型変更では、スキーマを検出することと、変更を受け入れることが別の判断であることを確かめる。

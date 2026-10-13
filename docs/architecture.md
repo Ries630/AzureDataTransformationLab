@@ -1,11 +1,13 @@
 # アーキテクチャ
 
+この文書は、Azure学習環境のサービス構成、各コンポーネントの責務、異常時の扱いを定める。AWS版に固有の契約は[AWS処理契約](aws-architecture.md)、実装の順序は[学習計画](learning-plan.md)を正とする。
+
 ## AWSとAzureの概念対応
 
 | AWS | Azure学習環境 | 学習する役割 |
 |---|---|---|
 | S3 | Azure Data Lake Storage Gen2 | 入出力ストレージ |
-| EventBridge Rule | ADF Storage Event Triggerが利用するEvent Grid | ストレージイベントの配送 |
+| EventBridge Rule | ADF Storage Event Triggerが利用するEvent Grid | ストレージイベントの配信 |
 | Step Functions | Azure Data Factory Pipeline | 親オーケストレーター |
 | Lambda (Python) | Azure Functions (Python) | 入力検証 |
 | Glue Crawler | ADFのSchema DiscoveryとMapping Data FlowのSchema Drift | スキーマ推論と変化への対応 |
@@ -15,11 +17,9 @@
 | CloudWatch AlarmとSNS Email | Azure Monitor AlertとAction Group | 障害通知 |
 | Terraform | TerraformとAzureRM Provider | IaC |
 
-Glue Crawlerはスキーマを推論し、そのメタデータをGlue Data Catalogへ保存する。
+Glue Crawlerはスキーマを推論し、そのメタデータをGlue Data Catalogへ保存する。Azureの初期構成で再現するのは、このうちスキーマの推論と、スキーマが変化したときの対応である。カタログの永続化、パーティション管理、組織的なデータガバナンスは対象外とする。
 
-Azureの初期構成で再現するのはスキーマ推論とスキーマ変化への対応であり、カタログの永続化、パーティション管理、組織的なデータガバナンスは対象外とする。
-
-外部SQL取得（[Issue #28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)）はAzure・AWSとも当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。AWSの構成案は[AWS版の計画案](aws-learning-plan.md#aws-2-検証と変換のコードiacを作る)を参照する。
+外部SQLからの取得（[#28](https://github.com/Ries630/AzureDataTransformationLab/issues/28)）は、Azure・AWSとも当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。AWS版の構成案は[AWS版の計画案](aws-learning-plan.md#aws-2-検証と変換のコードiacを作る)にある。
 
 ## Azure側の処理フロー
 
@@ -62,9 +62,7 @@ Pipeline Failed
 Azure Monitor Alert → Action Group → Email
 ```
 
-初期段階では`landing`の入力を削除しない。
-
-原本を残すことで原因調査と手動再実行ができ、少量のサンプルデータでは保存費用も小さいためである。
+初期段階では、`landing`の入力を処理後も削除しない。原本が残っていれば原因を調べたり手動で再実行したりでき、少量のサンプルデータなら保存費用も小さいためである。
 
 ## ストレージ領域
 
@@ -75,37 +73,44 @@ Azure Monitor Alert → Action Group → Email
 | `rejected` | 入力検証に失敗した原本と検証結果 |
 | `output` | Mapping Data Flowによる変換結果 |
 
-Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。
+Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。Pipeline自身が`validated`、`rejected`、`output`へ書き込むので、対象を絞らないとその書き込みで同じPipelineが再び起動してしまう。
 
-`validated`、`rejected`、`output`への書き込みによって同じPipelineが再起動しないようにする。
+DFSのAPIでアップロードすると、Storageは空のファイルを作ってから中身を書き込み（flush）、その両方で`BlobCreated`を発行する。Triggerは空Blobのイベントを無視する設定にし、1回の投入でPipelineが1回だけ起動するようにする。この設定の結果、0バイトのCSVではPipelineが起動しない。
 
-DFSのAPIでアップロードすると、Storageは空のファイルを作成した後に中身を書き込み（flush）、それぞれで`BlobCreated`を発行する。Triggerは空Blobのイベントを無視する設定とし、1回の投入でPipelineを1回だけ起動する。この設定により、0バイトのCSVはPipelineを起動しない。
+### 検証する版の特定
 
-Functionは検証する版を特定するために`etag`を必須とする（[HTTP契約](#http契約)）。一方、TriggerがPipelineへ渡すのは`folderPath`と`fileName`だけである。そこでPipelineは、Functionを呼ぶ前にWeb ActivityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）をManaged Identityで呼び出し、応答JSONの`paths`からFilter Activityで対象ファイルの`etag`を取り出す。ファイル単体の情報を返す`comp=metadata`はETagを応答ヘッダーで返すが、Web Activityは応答ヘッダーを後続のActivityへ確実に渡せない。そのため、ETagを応答本文に含むPath Listを使う。
+Functionは、どの版のファイルを検証するかを特定するために`etag`を必須の入力としている（[HTTP契約](#http契約)）。一方、TriggerがPipelineへ渡すのは`folderPath`と`fileName`だけで、ETagは含まれない。
 
-ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が異なる。初期構成ではこの制約を受け入れ、Phase 6の冪等性で扱う。
+そこでPipelineは、Functionを呼ぶ前に自分でETagを取得する。
+
+1. Web Activityが、Managed IdentityでDFS endpointのPath List（`landing?resource=filesystem&directory=<dir>`）を呼び出す。
+2. Filter Activityが、応答JSONの`paths`から対象ファイルの要素を選び、`etag`を取り出す。
+
+ファイル1件の情報を返す`comp=metadata`もあるが、このAPIはETagを応答ヘッダーで返す。Web Activityは応答ヘッダーを後続のActivityへ確実に渡せないため、ETagを応答本文に含むPath Listを使う。
+
+この方法でも、ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が食い違う。初期構成ではこの制約を受け入れ、Phase 6の冪等性で扱う。
 
 ## Azure Functionsの責務
 
-Azure Functionsは重いETLを実行せず、`landing`にある小さなCSVの入力検証を担当する。検証結果を返すだけで、入力CSVのコピーや書き込みは行わない。
+Azure Functionsは重いETLを実行せず、`landing`にある小さなCSVの入力検証だけを担当する。検証結果を返すだけで、入力CSVのコピーや書き込みは行わない。
 
 ### コードの責務
 
-検証処理はAzure Functions固有の処理から分離する。
+検証処理は、Azure Functions固有の処理から分離する。
 
 | ファイル | 責務 |
 |---|---|
 | `functions/validator/validation.py` | Azure SDKに依存せず、CSVのバイト列とファイル名を検証する |
 | `functions/validator/storage.py` | Managed IdentityでBlobを読み取り、ETagを照合する |
-| `functions/validator/function_app.py` | HTTPリクエストを検証し、Storage・純粋な検証処理・HTTP応答を接続する |
+| `functions/validator/function_app.py` | HTTPリクエストを検証し、Storage、純粋な検証処理、HTTP応答をつなぐ |
 
-純粋な検証処理の公開境界は次の形とする。
+純粋な検証処理の公開境界は、次の関数とする。
 
 ```python
 validate_csv(content: bytes, filename: str) -> dict
 ```
 
-`validation.py`はAzureへの通信を行わないため、同じ入力に対してローカルテストとAzure上のFunctionで同じ判定を確認できる。
+`validation.py`はAzureと通信しないので、同じ入力に対する判定を、ローカルのテストとAzure上のFunctionの両方で同じように確かめられる。
 
 ### CSV検証規則
 
@@ -116,19 +121,25 @@ validate_csv(content: bytes, filename: str) -> dict
 | ファイル名 | 拡張子が`.csv`であること |
 | エンコーディング | UTF-8。UTF-8 BOMは許容し、その他の不正なバイト列は拒否する |
 | CSV構文 | CSVとして解析でき、各データ行の列数がヘッダーと一致すること |
-| ヘッダー | `order_id`、`customer_id`、`amount`、`currency`、`ordered_at`を必須とする。順序は問わず、重複名は拒否する。追加列は許容する |
-| データ行 | ヘッダーを除くデータ行を1,000行までとする。空ファイル、ヘッダーだけのファイル、上限超過は拒否する |
-| ファイルサイズ | UTF-8デコード前の入力バイト数を1 MiBまでとする |
-| `order_id`、`customer_id` | 空欄および空白だけの値を拒否する文字列 |
+| ヘッダー | `order_id`、`customer_id`、`amount`、`currency`、`ordered_at`を必須とする。順序は問わず、重複した列名は拒否する。追加の列は許容する |
+| データ行 | ヘッダーを除くデータ行を1,000行までとする。空ファイル、ヘッダーだけのファイル、上限を超えるファイルは拒否する |
+| ファイルサイズ | UTF-8でデコードする前の入力バイト数を1 MiBまでとする |
+| `order_id`、`customer_id` | 空欄と空白だけの値を拒否する文字列 |
 | `amount` | 指数表記を含まない通常の十進表記で、有限な`Decimal`かつ0以上であること。Mapping Data Flowの`decimal(18,4)`へ値を変えずに変換できるよう、小数部は4桁まで、整数部は14桁まで（10の14乗未満）とする |
 | `currency` | `JPY`であること |
-| `ordered_at` | ISO 8601日時。日付と時刻の区切りは`T`とし、タイムゾーンは省略可能とする。小数秒はMapping Data Flowが解釈できる3桁（ミリ秒）までとする |
+| `ordered_at` | ISO 8601の日時。日付と時刻の区切りは`T`とし、タイムゾーンは省略できる。小数秒は、Mapping Data Flowが解釈できる3桁（ミリ秒）までとする |
 
-ヘッダーに不備がある場合は必須セルの値検証を行わず、ヘッダーエラーとデータ行の列数エラーだけを返す。入力サイズと行数の上限内では、必須セルの検証エラーを省略しない。1つのセルに対してエラーを1件返し、巨大なヘッダーによる構造エラーは空欄列名を1件、同じ重複列名を名前ごと1件に集約する。セルに対応しないファイル・構造エラーでは`row`または`column`を`null`にできる。行番号はヘッダーを1行目、最初のデータ行を2行目として数え、quoted field内の改行は1つの論理レコードとして扱う。
+エラーは次の規則で報告する。
+
+- ヘッダーに不備がある場合は、必須セルの値を検証しない。返すのは、ヘッダーのエラーと、データ行の列数のエラーだけである。
+- 入力サイズと行数が上限内であれば、必須セルの検証エラーを省略せずにすべて返す。1つのセルについて返すエラーは1件とする。
+- 巨大なヘッダーによる構造エラーは集約する。空欄の列名は1件にまとめ、同じ名前の重複は名前ごとに1件にまとめる。
+- 特定のセルに対応しないファイルや構造のエラーでは、`row`または`column`を`null`にできる。
+- 行番号はヘッダーを1行目、最初のデータ行を2行目として数える。quoted fieldの中の改行は、1つの論理レコードの一部として扱う。
 
 ### 検証結果
 
-Functionは次の構造化された結果を返す。`errorCount`は`errors`の要素数と一致させる。
+Functionは、次の構造の結果を返す。
 
 ```json
 {
@@ -144,7 +155,7 @@ Functionは次の構造化された結果を返す。`errorCount`は`errors`の�
 }
 ```
 
-`status`は`VALID`または`INVALID`とする。`errors[].row`と`errors[].column`は、該当する行または列がない場合に`null`を設定する。入力内容の不備は、すべて検証結果として返す。
+`status`は`VALID`か`INVALID`のどちらかである。`errorCount`は`errors`の要素数と一致させる。`errors[].row`と`errors[].column`は、該当する行や列がない場合に`null`とする。入力内容の不備は、例外にせず、すべてこの検証結果として返す。
 
 ### HTTP契約
 
@@ -158,31 +169,57 @@ Functionは次の構造化された結果を返す。`errorCount`は`errors`の�
 }
 ```
 
-リクエストは8 KiB以下のJSONオブジェクトで、キーを`filesystem`、`path`、`etag`の3つに限定する。`filesystem`は`landing`に固定する。`path`は1〜1,024文字の相対パスで、各要素を空、`.`、`..`にできず、先頭の`/`、バックスラッシュ、制御文字、URLに使われる`:`、`?`、`#`、`%`を許可しない。`etag`は必須で、Blobから取得した引用符付きETagと完全一致させる。アカウント名はリクエストから受け取らず、アプリ設定`LAB_STORAGE_ACCOUNT_NAME`で固定する。
+リクエストは次の条件を満たさなければならない。
 
-認証後のHTTP応答は次のとおりとする。
+- 8 KiB以下のJSONオブジェクトで、キーは`filesystem`、`path`、`etag`の3つだけである。
+- `filesystem`は`landing`に固定する。
+- `path`は1〜1,024文字の相対パスである。パスの各要素は空、`.`、`..`にできない。先頭の`/`、バックスラッシュ、制御文字、URLで意味を持つ`:`、`?`、`#`、`%`は使えない。
+- `etag`は必須で、Blobから取得した引用符付きのETagと完全に一致しなければならない。
+
+Storageのアカウント名はリクエストから受け取らず、アプリ設定`LAB_STORAGE_ACCOUNT_NAME`で固定する。
+
+認証を通過した後のHTTP応答は、次のとおりとする。
 
 | 条件 | HTTP | `code`または本文 | 内容 |
 |---|---:|---|---|
 | CSVが規則を満たす | 200 | `status: VALID`の検証結果 | 入力を受け入れる |
 | CSVが規則を満たさない | 200 | `status: INVALID`の検証結果 | 業務Rejectとして扱う |
 | JSON、`filesystem`、`path`、`etag`などリクエストが不正 | 400 | `INVALID_REQUEST` | リクエストエラー |
-| 指定ETagと現在のBlobのETagが一致しない | 409 | `INPUT_CHANGED` | 入力が更新されたため検証を中止 |
+| 指定したETagが現在のBlobのETagと一致しない | 409 | `INPUT_CHANGED` | 入力が更新されたため検証を中止 |
 | Blobの読み取り、アクセス、その他のStorage操作に失敗 | 502 | `STORAGE_READ_FAILED` | システム障害 |
-| Storage読み取りがタイムアウトした | 504 | `STORAGE_TIMEOUT` | システム障害 |
+| Storageの読み取りがタイムアウトした | 504 | `STORAGE_TIMEOUT` | システム障害 |
 | 予期しない例外 | 500 | `INTERNAL_ERROR` | システム障害 |
 
-HTTP 200の`INVALID`は入力データを業務上受け入れられない状態であり、Pipelineで`rejected`へ進められる。HTTP 5xxは検証を完了できなかったシステム障害であり、Pipelineを失敗させて監視対象にする。
+HTTP 200の`INVALID`は、入力データを業務上受け入れられないという判定であり、Pipelineは`rejected`へ進む。HTTP 5xxは検証を最後まで実行できなかったシステム障害であり、Pipelineを失敗させて監視の対象にする。
 
 ### Storageと実行環境
 
-`storage.py`は`LAB_STORAGE_ACCOUNT_NAME`の`landing`だけを読み取る。Azure上ではFunctionがSDKで使用するUser Assigned Managed Identityを`AZURE_CLIENT_ID`で指定し、ローカルではAzure CLIのログインを使う。ETagを条件に読み取ることで、リクエストを受けた後に内容が変わったBlobを検証しない。
+`storage.py`は、`LAB_STORAGE_ACCOUNT_NAME`が指すStorageの`landing`だけを読み取る。ETagを条件にして読み取るので、リクエストを受けた後に内容が変わったBlobは検証しない。
 
-FunctionはLinuxのFlex Consumption、Azure Functionsランタイムv4、Python 3.14を対象とする。インスタンスメモリは2048 MB、最大インスタンス数は40、HTTPトリガーのインスタンスあたり同時実行数は1、Always Readyは0とする。最大インスタンス数はスケール上限であり、40台を常時起動する設定ではない。Function専用のホスト・デプロイStorageを入力Storageから分離し、Identityベースの接続を使う。Storage構成の判断理由と未検証事項は[ADR-0004](adr/0004-separate-function-host-storage.md)、最大インスタンス数の判断と未検証事項は[ADR-0007](adr/0007-set-flex-max-instance-count.md)を参照する。
+認証の方法は、実行する場所で異なる。
+
+| 実行場所 | 認証 |
+|---|---|
+| Azure | User Assigned Managed Identity。SDKが使うIdentityを`AZURE_CLIENT_ID`で指定する |
+| ローカル | Azure CLIのログイン |
+
+Functionの実行環境は次のとおりとする。
+
+| 項目 | 設定 |
+|---|---|
+| ホスティング | LinuxのFlex Consumption |
+| ランタイム | Azure Functionsランタイムv4、Python 3.14 |
+| インスタンスメモリ | 2048 MB |
+| 最大インスタンス数 | 40（スケールの上限であり、40台を常に起動しておく設定ではない） |
+| HTTPトリガーのインスタンスあたり同時実行数 | 1 |
+| Always Ready | 0 |
+| ホスト・デプロイ用Storage | 入力用Storageから分離し、Identityベースの接続を使う |
+
+Storage構成の判断理由と未検証事項は[ADR-0004](adr/0004-separate-function-host-storage.md)、最大インスタンス数の判断理由と未検証事項は[ADR-0007](adr/0007-set-flex-max-instance-count.md)にある。
 
 ## Mapping Data Flowの責務
 
-主なデータ変換はMapping Data Flowへ寄せる。
+主なデータ変換は、Mapping Data Flowに集める。
 
 ```text
 Source
@@ -198,58 +235,77 @@ Aggregate（必要な場合）
 Sink
 ```
 
-最初の変換は次を対象とする。
+最初の変換は、次を対象とする。
 
-- `order_id`から`orderId`への変更
-- `customer_id`から`customerId`への変更
-- `amount`のdecimalへの変換
-- `taxIncludedAmount = amount * 1.1`の追加
-- `ordered_at`のtimestampへの変換
+- `order_id`を`orderId`に、`customer_id`を`customerId`に改名する
+- `amount`をdecimalに変換する
+- `ordered_at`をtimestampに変換し、`orderedAt`とする
+- `taxIncludedAmount = amount * 1.1`の列を追加する
 
-Schema Driftでは列追加、列削除、型変更を試し、許容する変更と拒否する変更を区別する。
-
-スキーマの自動検出は、スキーマ変更の自動受け入れを意味しない。
+Schema Driftでは、列の追加、列の削除、型の変更を試し、受け入れる変更と拒否する変更を区別する。スキーマを自動で検出できても、その変更を自動で受け入れてよいことにはならない。
 
 ## 比較基準
 
-Azure Phase 3・4とAWSの比較は、[固定入力と派生期待値](../samples/expected/README.md)を基準にする。実Azureで確認した挙動は[Phase 3](tutorials/phase-3-data-factory.md)と[Phase 4の比較結果](tutorials/phase-4-schema-evolution.md#3-比較結果)で辿り、派生期待値を実環境から採取した出力とみなさない。
+Azure Phase 3・4とAWS版の結果は、[固定入力と派生期待値](../samples/expected/README.md)を基準に比較する。派生期待値は仕様から導いたデータであり、実環境から採取した出力ではない。実Azureで確認した挙動は、[Phase 3の解説](tutorials/phase-3-data-factory.md)と[Phase 4の比較結果](tutorials/phase-4-schema-evolution.md#3-比較結果)で確認できる。
 
-検証は`status`、`errorCount`、`errors`のrow・column・messageを一致条件にする。変換CSVは列名と行の多重集合を比較し、同じ行が複数ある場合も件数を保つ。CSV行順、partファイル名、サービスの実行IDは一致条件に含めない。入力の論理レコード数と最終出力行数も一致させる。
+### 一致条件
 
-金額は浮動小数点を経由せずDecimalとして比較する。`amount`はdecimal(18,4)へ値を変えずにcastし、`taxIncludedAmount`は正確な十進数1.1との積を小数5桁まで保持する。比較に許容誤差を設けず、CSVでの末尾ゼロの表記差は無視する。上限外の桁は検証で拒否し、丸めで受け入れない。
+| 比較対象 | 一致させるもの | 一致条件に含めないもの |
+|---|---|---|
+| 検証結果 | `status`、`errorCount`、`errors`の`row`・`column`・`message` | |
+| 変換CSV | 列名と、行の多重集合（同じ行が複数ある場合も件数を保つ） | CSVの行順、partファイル名、サービスの実行ID |
+| 行数 | 入力の論理レコード数と、最終出力の行数 | |
 
-日時はタイムゾーン付き入力をUTCへ正規化して同じ瞬間・ミリ秒で比較する。タイムゾーン省略入力は壁時計時刻のまま比較し、環境のローカルタイムゾーンを補完しない。この正規化をzone付き入力でAzure実機確認した証跡はまだなく、固定入力の比較成功をその証跡としない。
+### 金額と日時
 
-標準変換は明示列のみ、Drift変換は追加列の値も照合する。AWS初期構築はDrift相当を選び、未知列を入力文字列として保持する。Crawlerの推論型の一致はCSV値比較で保証しない。小数境界・日時zone・cast欠落・重複配送・再実行は、固定入力の未網羅部分をAWS 2のテストとAWS 4の実機確認で補う。AWS固有の契約は[AWS処理契約](aws-architecture.md)を参照する。
+金額は、浮動小数点を経由せずDecimalとして比較する。
+
+- `amount`は、decimal(18,4)へ値を変えずにcastする。
+- `taxIncludedAmount`は、正確な十進数1.1との積を小数5桁まで保持する。
+- 許容誤差は設けず、CSV上の末尾ゼロの表記の違いは無視する。
+- 上限を超える桁は検証で拒否し、丸めて受け入れることはしない。
+
+日時は、入力のタイムゾーンの有無で扱いを分ける。
+
+- タイムゾーン付きの入力は、UTCへ正規化し、同じ瞬間かどうかをミリ秒の精度で比較する。
+- タイムゾーンを省略した入力は、壁時計の時刻のまま比較し、実行環境のローカルタイムゾーンを補わない。
+
+ただし、タイムゾーン付きの入力をこの正規化どおりに扱えることは、Azure実機ではまだ確かめていない。固定入力の比較が成功しても、その確認にはならない。
+
+### 未知列とAWS版の範囲
+
+標準の変換では明示した列だけを、Drift変換では追加の列の値も照合する。AWS版の初期構築はDrift相当の変換を選び、未知の列を入力時の文字列のまま保持する。Crawlerが推論した型が一致するかどうかは、CSVの値の比較では保証できない。
+
+小数の境界、日時のタイムゾーン、castによる欠落、重複配信、再実行は、固定入力では網羅できていない。これらはAWS 2のテストとAWS 4の実機確認で補う。AWS固有の契約は[AWS処理契約](aws-architecture.md)にある。
 
 ## 業務Rejectとシステム障害
 
-入力内容の不備は業務Rejectとして扱う。
+入力内容の不備は、業務Rejectとして扱う。
 
 - 必須列の不足
 - `amount`の不正
 - 許可されていない`currency`
 - 入力形式の不正
 
-Functionが正常に判定を返し、`rejected`への配置に成功した場合、Pipelineは正常終了させる。
+Functionが判定を正常に返し、`rejected`への配置にも成功した場合、Pipelineは正常終了とする。
 
-次はシステム障害としてPipelineを失敗させる。
+次の事象はシステム障害とし、Pipelineを失敗させる。
 
 - Functionの例外
-- Functionからの契約外の`status`
+- Functionが契約にない`status`を返した
 - ADF PipelineまたはMapping Data Flowの失敗
 - Mapping Data Flowの変換による行の欠落（読込行数と書込行数の不一致）
 - Storageへのアクセス拒否
 - Timeout
-- Managed IdentityまたはRBACの設定不備
+- Managed IdentityやRBACの設定不備
 
-システム障害だけをAzure Monitor AlertとAction Groupによるメール通知の対象とする。
+Azure Monitor AlertとAction Groupによるメール通知の対象は、システム障害だけである。業務Rejectのたびに通知すると、データ提供側の誤りの通知に、本当の障害の通知が埋もれるためである。
 
 ## 冪等性
 
-Event Gridは同じイベントを複数回配送する可能性があるため、同一入力を複数回処理しても二重出力や不整合を起こさない設計にする。
+Event Gridは、同じイベントを複数回配信することがある。そのため、同じ入力を複数回処理しても、二重出力や不整合が起きない設計にする。
 
-処理識別子は次を候補とする。
+処理識別子は、次の組み合わせを候補とする。
 
 ```text
 storage account
@@ -258,8 +314,6 @@ storage account
 + ETag
 ```
 
-学習環境では、入力パスとファイルハッシュの組み合わせも比較する。
+学習環境では、入力パスとファイルハッシュの組み合わせとも比較する。
 
-具体的な状態保存、排他制御、再試行時の状態遷移はPhase 6で決定する。
-
-最低限、出力パスと上書き方針を決め、同じ入力の再実行結果を説明できるようにする。
+状態の具体的な保存方法、排他制御、再試行時の状態遷移はPhase 6で決める。それまでも、最低限、出力パスと上書きの方針を決めておき、同じ入力を再実行したときの結果を説明できるようにする。
