@@ -1,6 +1,6 @@
 # AWS版の配置と運用
 
-AWS 2のコード、配置物の生成、実機操作をまとめる。処理の仕様は[AWS処理契約](aws-architecture.md)、段階と完成条件は[AWS計画](aws-learning-plan.md)を正とする。会社への一式ZIPはAWS 3で作成し、適用・サンプル投入・通知の確認はAWS 4で行う。会社の権限とサービス連携は未検証。
+AWS 2のコード、配置物の生成、実機操作をまとめる。処理の仕様は[AWS処理契約](aws-architecture.md)、段階と完成条件は[AWS計画](aws-learning-plan.md)を正とする。会社への一式ZIPは[AWS 3の持ち込み手順](aws-bundle.md)で作成し、適用・サンプル投入・通知の確認はAWS 4で行う。会社の権限とサービス連携は未検証。
 
 ## コードと配置物
 

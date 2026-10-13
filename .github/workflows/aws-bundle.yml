@@ -1,0 +1,86 @@
+name: AWS transfer bundle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  transfer-bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+            powershell_architecture: arm64
+            powershell_sha256: 924829e54c983648f6f1419a2dc7f9433c861b2fb5bd57736ff096c24f133729
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            powershell_architecture: x64
+            powershell_sha256: ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.11.7'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.16.0
+          terraform_wrapper: false
+      - name: Install pinned PowerShell for the native Linux architecture
+        shell: bash
+        env:
+          POWERSHELL_ARCHITECTURE: ${{ matrix.powershell_architecture }}
+          POWERSHELL_SHA256: ${{ matrix.powershell_sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle-pwsh"
+          curl --fail --location --silent --show-error \
+            "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-linux-${POWERSHELL_ARCHITECTURE}.tar.gz" \
+            -o "$RUNNER_TEMP/powershell.tar.gz"
+          printf '%s  %s\n' "$POWERSHELL_SHA256" "$RUNNER_TEMP/powershell.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/powershell.tar.gz" -C "$RUNNER_TEMP/bundle-pwsh"
+          chmod +x "$RUNNER_TEMP/bundle-pwsh/pwsh"
+          printf '%s\n' "$RUNNER_TEMP/bundle-pwsh" >> "$GITHUB_PATH"
+      - name: Check bundle tooling
+        run: |
+          uvx --from ruff==0.15.2 ruff check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
+          uvx --from ruff==0.15.2 ruff format --check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
+          uv run scripts/aws/test_bundle.py
+          uv run scripts/aws/test_verify_bundle.py
+          uv run scripts/aws/test_check_bundle.py
+      - name: Build Lambda package and draft transfer ZIP
+        env:
+          LAMBDA_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          uv run scripts/aws/package.py "$RUNNER_TEMP/aws-lambda.zip" --architecture "$LAMBDA_ARCHITECTURE"
+          uv run scripts/aws/bundle.py "$RUNNER_TEMP/aws-bundle-draft.zip" --lambda-zip "$RUNNER_TEMP/aws-lambda.zip"
+      - name: Verify a fresh extraction without AWS credentials
+        run: |
+          mkdir "$RUNNER_TEMP/aws-bundle-extracted"
+          unzip -q "$RUNNER_TEMP/aws-bundle-draft.zip" -d "$RUNNER_TEMP/aws-bundle-extracted"
+          if ! uv run "$RUNNER_TEMP/aws-bundle-extracted/scripts/aws/check_bundle.py" "$RUNNER_TEMP/aws-bundle-extracted" --report "$RUNNER_TEMP/aws-bundle-report.json"; then
+            cat "$RUNNER_TEMP/aws-bundle-report.json"
+            exit 1
+          fi
+      - name: Build the transfer ZIP with matching verification evidence
+        run: |
+          uv run scripts/aws/bundle.py "$RUNNER_TEMP/aws-transfer-bundle.zip" --lambda-zip "$RUNNER_TEMP/aws-lambda.zip" --report "$RUNNER_TEMP/aws-bundle-report.json"
+          cd -- "$RUNNER_TEMP"
+          sha256sum aws-transfer-bundle.zip > aws-transfer-bundle.zip.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aws-transfer-bundle-${{ matrix.architecture }}
+          path: |
+            ${{ runner.temp }}/aws-transfer-bundle.zip
+            ${{ runner.temp }}/aws-transfer-bundle.zip.sha256
+            ${{ runner.temp }}/aws-bundle-report.json
+          if-no-files-found: error
+          retention-days: 7
