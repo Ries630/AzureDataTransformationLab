@@ -86,11 +86,11 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 |---|---|
 | `input` | `bucket`、`key`、`etag`、`inputId` |
 | `attempt` | `attemptId`（実行ARNから導出する一意値）、`executionArn` |
-| `validation` | `status`、`errorCount`、検証JSONのbucket/key、固定原本のbucket/key |
-| `transform` | staging参照、入力行数、出力行数、Glue job run ID |
+| `validation` | `status`、`errorCount`、検証JSONのbucket/key、固定原本のkey、入力行数（VALIDの場合） |
+| `transform` | staging参照、Glue job run ID |
 | `publication` | 公開manifestのbucket/key、完了状態 |
 
-検証結果の全文は、共通`validate_csv`の戻り値のまま、固定原本と同じattempt配下の`validation.json`に保存する。履歴は、DynamoDBの世代状態とattemptごとの参照で辿る。サービス固有のIDは比較用の値に含めない。
+出力行数は状態データに持たず、Glueがstagingに書くmanifestで入力行数と照合する。検証結果の全文は、共通`validate_csv`の戻り値のまま、固定原本と同じattempt配下の`validation.json`に保存する。履歴は、DynamoDBの世代状態とattemptごとの参照で辿る。サービス固有のIDは比較用の値に含めない。
 
 ## 実行状態、排他と再実行
 
@@ -107,9 +107,9 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 | 未登録 | イベントまたは手動開始 | 条件付きPutで`RUNNING`を取得 |
 | `RUNNING` | 重複イベント | 既存実行への参照を返して正常終了。出力・状態を更新しない |
 | `SUCCEEDED` / `REJECTED` | 通常イベント・手動開始 | 正常終了のno-op。既存結果を返す |
-| `FAILED` | 新しい実行 | 前の実行が終端状態であることを確認し、条件付きUpdateで新attemptを取得 |
+| `FAILED` | 新しい実行 | 前の実行が終端状態であることを確認し、旧所有者を条件にしたPutで新attemptを取得 |
 | `SUCCEEDED` / `REJECTED` | 手動の`force=true` | 前の実行が終端状態の場合だけ新attemptを取得。自動イベントではforceを受け付けない |
-| 古い`RUNNING` | 障害後の手動再実行 | DescribeExecutionでFailed/TimedOut/Abortedを確認してFAILEDへ条件付き遷移後、取得。時刻だけで横取りしない |
+| 古い`RUNNING` | 障害後の手動再実行 | DescribeExecutionでFailed/TimedOut/Abortedを確認し、旧所有者を条件にしたPutで新attemptを取得。時刻だけで横取りしない |
 
 すべての更新と公開は、所有するexecutionとattemptの一致を条件にする。遅れて動いた古いattemptの処理が、新しい状態を更新しないようにするためである。
 
@@ -205,7 +205,7 @@ INVALIDの場合は、原本とJSONの保存が終わってから`REJECTED`へ�
 - DLQのメッセージは自動で再投入しない。原因を解消した後、会社側で手動で再実行する。
 - 中断やTimeoutで世代itemが`RUNNING`のまま残った場合は、[状態遷移の表](#世代itemと状態遷移)の「古い`RUNNING`」に従って再実行する。変換ロックが残った場合は、[中断で残ったロックの復旧](#中断で残ったロックの復旧)に従う。
 
-Lambda・State Machine・Glueのログには、本文や認証情報を出さず、inputId、attemptId、サービスの実行ID、エラーcodeを残す。ログとS3の保持期限、SNSの購読、実際の通知送信は、会社の設定とAWS 4の受け入れ確認で確定する。
+ログには、CSVの本文、検証エラーの全文、認証情報を出さない。Lambdaは操作ごとに、操作名、結果（`ok`または`error`）、エラーcode、inputId、attemptId、executionArn、Glue job run IDを1行のJSONで記録する。State Machineのログ（ERRORレベル、実行データを含めない）とGlueのログは、executionArnとjob run IDでLambdaのログと対応づける。ログとS3の保持期限、SNSの購読、実際の通知送信は、会社の設定とAWS 4の受け入れ確認で確定する。
 
 ## 検証の境界
 
