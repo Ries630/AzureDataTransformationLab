@@ -22,7 +22,7 @@ AWS 3は配置物の準備と展開後の検査を行う。ファイル転送、
 
 認証情報、個人の設定・tfvars、state、保存済みplan、ログ、実データ、Git情報、キャッシュを同梱しない。`manifest.json`と`manifest.sha256`は、自己参照を避けるためmanifest内のファイルhashの対象外とする。`checksums.sha256`はpayloadのhash一覧を保持し、manifestにも一覧ファイル自体のhashを記録する。`manifest.sha256`はmanifestと一覧ファイルのhashを保持する。
 
-manifestとZIP内の`package-manifest.json`を照合し、共通検証コードと依存lockが対象ソースに一致する配置物を使う。ZIP内のhash記録だけでは配布元の真正性を確認できないため、受信時にはZIP全体のSHA-256を信頼できる別の経路で受け取って照合する。
+manifestとZIP内の`package-manifest.json`を照合し、共通検証コードと依存lockが対象ソースに一致する配置物を使う。ZIP内のhash記録だけでは配布元の真正性を確認できない。会社での受信時の照合は任意とし、行う条件は[受信と展開](#受信と展開)に置く。
 
 ## 生成側の手順
 
@@ -44,11 +44,29 @@ uv run scripts/aws/bundle.py /tmp/aws-transfer-bundle.zip --lambda-zip /tmp/adtl
 
 展開後の検査には、manifestのLambda CPUに一致するLinux arm64またはx86_64 / Python 3.14、Terraform、bash、`sha256sum`、PowerShellの`pwsh`が必要。これは生成側の検査環境であり、会社PCでPythonを使う要件ではない。reportは展開ディレクトリの外へ置く。最終生成では同じcommitとLambda ZIPを使い、ソース・payloadのhash、対象環境と成功した検査項目が一致するreportだけを受け付ける。reportなしのdraftはmanifestの`verification.status=not_checked`、検査を反映した最終ZIPは`passed`になる。どちらも会社への配置検証を意味する`deploymentVerified`は`false`のまま。
 
-配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64とLinux x86_64の各CPU上で行う。成功した実行の`aws-transfer-bundle-arm64`または`aws-transfer-bundle-x86_64` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。ダウンロードしたZIPの具体的なSHA-256は、配布する実体ごとに確認する。
+配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64とLinux x86_64の各CPU上で行う。成功した実行の`aws-transfer-bundle-arm64`または`aws-transfer-bundle-x86_64` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。ZIPのSHA-256ファイルは、受信側で[任意の照合](#任意の照合)を行うときに使う。
 
-## 受信時の照合
+## 受信と展開
 
-会社で許可された方法でZIPと、そのZIPのSHA-256を受け取る。以下のパスは実際の受信ファイルに置き換える。
+会社で許可された方法でZIPを受け取り、新しい空ディレクトリへ展開する。既存の展開先へ重ねて展開しない。以下のパスは実際の受信ファイルに置き換える。
+
+PowerShell:
+
+```powershell
+Expand-Archive -LiteralPath .\aws-bundle.zip -DestinationPath .\aws-bundle
+```
+
+WSL:
+
+```bash
+unzip aws-bundle.zip -d aws-bundle
+```
+
+受信時のhash照合は必須にしない。ZIPは成功したCI実行のartifactから取得し、会社では許可された経路で転送する。配置する変更は会社で作るplanで確認する。照合を省くと、転送中の改変や、manifestと異なる同梱ファイルを検出できなくなる。学習環境ではこの手間を省くことを選ぶ。
+
+### 任意の照合
+
+転送経路に不安がある場合、展開で警告が出た場合、planに想定外の差分が出た場合は、次の照合を行う。ZIPのSHA-256は、同じCI実行のartifactにある`aws-transfer-bundle.zip.sha256`の値と比べる。
 
 PowerShell 5.1以上:
 
@@ -62,13 +80,7 @@ WSL:
 sha256sum aws-bundle.zip
 ```
 
-表示値が別途受け取ったSHA-256と一致した後、新しい空ディレクトリへ展開する。PowerShellでは次を使える。
-
-```powershell
-Expand-Archive -LiteralPath .\aws-bundle.zip -DestinationPath .\aws-bundle
-```
-
-WSLでは`unzip aws-bundle.zip -d aws-bundle`で展開する。既存の展開先へ重ねて展開せず、bundleのルートへ移動して同梱のhash確認スクリプトを実行する。**展開直後、会社のtfvars・backend設定・`.terraform`・実行結果などを追加する前に確認する。**未掲載ファイルも拒否するため、会社設定後のディレクトリを元の配布物として再検査しない。Pythonは不要。
+同梱ファイルの確認スクリプトは、bundleのルートで実行する。**展開直後、会社のtfvars・backend設定・`.terraform`・実行結果などを追加する前に実行する。**未掲載ファイルも拒否するため、会社設定後のディレクトリを元の配布物として再検査しない。Pythonは不要。
 
 PowerShell:
 
@@ -82,7 +94,7 @@ WSL:
 bash scripts/aws/verify-bundle.sh
 ```
 
-欠落や改変が検出された場合は配置を止め、ZIPを再取得して独立したSHA-256から照合し直す。確認スクリプトの実行は会社のPowerShell実行ポリシーに従い、ポリシーを無断で変更しない。
+欠落や改変が検出された場合は配置を止め、ZIPを再取得して照合し直す。確認スクリプトの実行は会社のPowerShell実行ポリシーに従い、ポリシーを無断で変更しない。
 
 ## 会社の環境値と配置
 
