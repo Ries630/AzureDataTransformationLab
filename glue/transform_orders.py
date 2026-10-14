@@ -183,6 +183,17 @@ def run(spark: Any, s3: Any, arguments: dict[str, str]) -> dict[str, Any]:
     return manifest
 
 
+def read_data_prefix(argv: list[str]) -> str:
+    """省略・空値を許すdata_prefixをGlue引数から読み、未指定なら空文字を返す。"""
+    for index, value in enumerate(argv):
+        if value.startswith("--data_prefix="):
+            return value.split("=", 1)[1]
+        if value == "--data_prefix":
+            following = argv[index + 1] if index + 1 < len(argv) else ""
+            return "" if following.startswith("--") else following
+    return ""
+
+
 def main() -> None:
     """Glue jobの引数とセッションを取得し、staging保存完了後にcommitする。"""
     import boto3
@@ -200,9 +211,10 @@ def main() -> None:
             "staging_prefix",
             "input_id",
             "attempt_id",
-            "data_prefix",
         ],
     )
+    # 新規bucketのdata_prefixは空文字で、必須引数として解析すると失敗するため任意で読む
+    arguments["data_prefix"] = read_data_prefix(sys.argv)
     context = GlueContext(SparkContext.getOrCreate())
     job = Job(context)
     job.init(arguments["JOB_NAME"], arguments)

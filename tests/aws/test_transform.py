@@ -213,5 +213,26 @@ class SparkTests(unittest.TestCase):
         s3.get_object.assert_not_called()
 
 
+class ArgumentTests(unittest.TestCase):
+    """Glue引数のうち任意のdata_prefixを読み分ける。"""
+
+    def test_data_prefix_is_optional(self):
+        """省略・空値・値ありのいずれでも、Glueの必須引数解析に頼らず読む。"""
+        from glue.transform_orders import read_data_prefix
+
+        cases = {
+            "omitted": (["script.py", "--input_id", "a"], ""),
+            "empty_before_next": (["script.py", "--data_prefix", "--input_id", "a"], ""),
+            "empty_at_end": (["script.py", "--data_prefix"], ""),
+            "empty_value": (["script.py", "--data_prefix", ""], ""),
+            "equals_empty": (["script.py", "--data_prefix="], ""),
+            "value": (["script.py", "--data_prefix", "team-ries/"], "team-ries/"),
+            "equals_value": (["script.py", "--data_prefix=team-ries/"], "team-ries/"),
+        }
+        for name, (argv, expected) in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(read_data_prefix(argv), expected)
+
+
 if __name__ == "__main__":
     unittest.main()
