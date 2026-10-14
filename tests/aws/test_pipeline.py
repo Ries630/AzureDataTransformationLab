@@ -166,6 +166,52 @@ class ServiceBoundaryTests(unittest.TestCase):
             self.pipeline.release(self.state)
         self.table.delete_item.assert_not_called()
 
+    def test_record_glue_accepts_sync_result_id_and_records_owned_lock(self):
+        """同期Glue応答のIdを変換ロックへ所有者条件付きで記録する。"""
+        self.state["transform"] = {"stagingPrefix": "staging/"}
+        self.state["glueResult"] = {
+            "Id": "jr-sync",
+            "JobName": "job",
+            "JobRunState": "SUCCEEDED",
+        }
+
+        result = self.pipeline.record_glue(self.state)
+
+        self.assertEqual(result["transform"]["jobRunId"], "jr-sync")
+        update = self.table.update_item.call_args.kwargs
+        self.assertEqual(update["Key"], {"inputId": "__transform_lock__"})
+        self.assertEqual(update["ExpressionAttributeValues"][":run"], "jr-sync")
+        self.assertEqual(update["ExpressionAttributeValues"][":execution"], "execution-new")
+        self.assertIn("attemptId = :attempt", update["ConditionExpression"])
+
+    def test_record_glue_prefers_id_then_accepts_legacy_keys(self):
+        """新しいIdを優先しつつ旧応答キーも受け入れる。"""
+        for glue_result, expected in (
+            ({"Id": "jr-id", "JobRunId": "jr-lower", "JobRunID": "jr-upper"}, "jr-id"),
+            ({"JobRunId": "jr-lower", "JobRunID": "jr-upper"}, "jr-lower"),
+            ({"JobRunID": "jr-upper"}, "jr-upper"),
+        ):
+            with self.subTest(glue_result=glue_result):
+                self.table.update_item.reset_mock()
+                result = self.pipeline.record_glue(
+                    self.state
+                    | {"transform": {"stagingPrefix": "staging/"}, "glueResult": glue_result}
+                )
+                self.assertEqual(result["transform"]["jobRunId"], expected)
+                self.assertEqual(
+                    self.table.update_item.call_args.kwargs["ExpressionAttributeValues"][":run"],
+                    expected,
+                )
+
+    def test_record_glue_rejects_empty_or_missing_run_id_without_writes(self):
+        """空または欠損した実行IDは契約エラーにしロックを書き換えない。"""
+        for glue_result in ({"Id": "", "JobRunId": "", "JobRunID": ""}, {}):
+            with self.subTest(glue_result=glue_result):
+                self.table.update_item.reset_mock()
+                with self.assertRaisesRegex(module.ContractError, "MISSING_GLUE_RUN_ID"):
+                    self.pipeline.record_glue(self.state | {"glueResult": glue_result})
+                self.table.update_item.assert_not_called()
+
     def test_old_attempt_cannot_release_new_lock(self):
         """旧attemptの完了が新attemptのロックを削除しない。"""
         self.table.get_item.return_value = {"Item": {"attemptId": "other", "executionArn": "other"}}
@@ -484,7 +530,11 @@ class RetryReviewTests(unittest.TestCase):
         env = dict(
             BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
         )
-        for spelling, run_id in (("JobRunId", "jr-lower"), ("JobRunID", "jr-upper")):
+        for spelling, run_id in (
+            ("Id", "jr-id"),
+            ("JobRunId", "jr-lower"),
+            ("JobRunID", "jr-upper"),
+        ):
             for error_code, expected_error, logged_code in (
                 ("InternalServerError", module.TransientServiceError, "InternalServerError"),
                 ("ConditionalCheckFailedException", module.OwnershipLost, "OWNER_CHANGED"),
@@ -507,7 +557,15 @@ class RetryReviewTests(unittest.TestCase):
                         "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
                         "accepted": True,
                         "transform": {"stagingPrefix": "staging/private/"},
-                        "glueResult": {spelling: run_id, "Result": "private-result"},
+                        "glueResult": {
+                            spelling: run_id,
+                            **(
+                                {"JobRunId": "legacy-lower", "JobRunID": "legacy-upper"}
+                                if spelling == "Id"
+                                else {}
+                            ),
+                            "Result": "private-result",
+                        },
                         "csv": "private-csv-body",
                     }
                     output = io.StringIO()
@@ -549,6 +607,52 @@ class RetryReviewTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             module._log_operation("cleanup", {"state": state}, None, None)
         self.assertEqual(json.loads(output.getvalue())["jobRunId"], "preferred")
+
+    def test_handler_records_and_logs_sync_glue_result_id(self):
+        """公開handlerが同期応答のIdを記録し、ログにも同じIDを出す。"""
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+
+        env = dict(
+            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
+        )
+        s3, glue, sfn = (Mock() for _ in range(3))
+        table = Mock()
+        sdk_clients = {"s3": s3, "glue": glue, "stepfunctions": sfn}
+        state = {
+            "input": {"bucket": "bucket", "key": "landing/a.csv", "etag": "e", "inputId": "i"},
+            "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
+            "accepted": True,
+            "transform": {"stagingPrefix": "staging/id/attempt/"},
+            "glueResult": {
+                "Id": "jr-id",
+                "JobRunId": "jr-lower",
+                "JobRunID": "jr-upper",
+                "JobName": "job",
+                "JobRunState": "SUCCEEDED",
+            },
+        }
+        output = io.StringIO()
+        with (
+            patch.dict(module.os.environ, env),
+            patch.object(
+                module.boto3,
+                "client",
+                side_effect=lambda name, clients=sdk_clients, **_: clients[name],
+            ),
+            patch.object(module.boto3, "resource") as resource,
+            contextlib.redirect_stdout(output),
+        ):
+            resource.return_value.Table.return_value = table
+            result = module.handler({"operation": "record_glue", "state": state}, None)
+
+        self.assertEqual(result["transform"]["jobRunId"], "jr-id")
+        self.assertEqual(
+            table.update_item.call_args.kwargs["ExpressionAttributeValues"][":run"], "jr-id"
+        )
+        self.assertEqual(json.loads(output.getvalue())["jobRunId"], "jr-id")
 
 
 if __name__ == "__main__":

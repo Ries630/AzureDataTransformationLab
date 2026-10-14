@@ -407,7 +407,11 @@ class Pipeline:
 
     def record_glue(self, state):
         """同期サービス連携で完了したjobの識別子を固定する。"""
-        run_id = state["glueResult"].get("JobRunId") or state["glueResult"].get("JobRunID")
+        run_id = (
+            state["glueResult"].get("Id")
+            or state["glueResult"].get("JobRunId")
+            or state["glueResult"].get("JobRunID")
+        )
         if not isinstance(run_id, str) or not run_id:
             raise ContractError("MISSING_GLUE_RUN_ID")
         self._owned_update(
@@ -731,6 +735,7 @@ def _log_operation(operation, event, result, code):
         or event.get("executionArn")
         or state.get("executionArn"),
         "jobRunId": transform.get("jobRunId")
+        or glue_result.get("Id")
         or glue_result.get("JobRunId")
         or glue_result.get("JobRunID"),
     }
