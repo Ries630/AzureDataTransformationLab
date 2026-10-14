@@ -44,7 +44,7 @@ uv run scripts/aws/bundle.py /tmp/aws-transfer-bundle.zip --lambda-zip /tmp/adtl
 
 展開後の検査には、manifestのLambda CPUに一致するLinux arm64またはx86_64 / Python 3.14、Terraform、bash、`sha256sum`、PowerShellの`pwsh`が必要。これは生成側の検査環境であり、会社PCでPythonを使う要件ではない。reportは展開ディレクトリの外へ置く。最終生成では同じcommitとLambda ZIPを使い、ソース・payloadのhash、対象環境と成功した検査項目が一致するreportだけを受け付ける。reportなしのdraftはmanifestの`verification.status=not_checked`、検査を反映した最終ZIPは`passed`になる。どちらも会社への配置検証を意味する`deploymentVerified`は`false`のまま。
 
-配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64とLinux x86_64の各CPU上で行う。成功した実行の`aws-transfer-bundle-arm64`または`aws-transfer-bundle-x86_64` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。ZIPのSHA-256ファイルは、受信側で[任意の照合](#任意の照合)を行うときに使う。
+配布物のPR検査（`.github/workflows/aws-bundle.yml`）は、このdraft生成、空ディレクトリへの展開、独立検査、同じpayloadからの最終生成をLinux arm64とLinux x86_64の各CPU上で行う。成功した実行の`aws-transfer-bundle-arm64`または`aws-transfer-bundle-x86_64` artifactに、最終ZIP、ZIP全体のSHA-256ファイル、検査reportを保存する。受け取るファイルは対象commitと成功した検査実行を照合して選ぶ。受信側で[任意の照合](#任意の照合)を行うときは、このSHA-256の値をZIPとは別の経路で参照する。
 
 ## 受信と展開
 
@@ -66,7 +66,9 @@ unzip aws-bundle.zip -d aws-bundle
 
 ### 任意の照合
 
-転送経路に不安がある場合、展開で警告が出た場合、planに想定外の差分が出た場合は、次の照合を行う。ZIPのSHA-256は、同じCI実行のartifactにある`aws-transfer-bundle.zip.sha256`の値と比べる。
+転送経路に不安がある場合、展開で警告が出た場合、planに想定外の差分が出た場合は、次の照合を行う。
+
+ZIPのSHA-256は、ZIPとは別の信頼できる経路で得た値と比べる。たとえば、転送前に生成側で`aws-transfer-bundle.zip.sha256`の値を控え、ZIPとは別の経路で参照する。ZIPと同じ経路で運んだ`.sha256`ファイルは、両方を置き換えられると一致してしまうため、改変がないことの根拠にならない。
 
 PowerShell 5.1以上:
 
@@ -80,7 +82,7 @@ WSL:
 sha256sum aws-bundle.zip
 ```
 
-同梱ファイルの確認スクリプトは、bundleのルートで実行する。**展開直後、会社のtfvars・backend設定・`.terraform`・実行結果などを追加する前に実行する。**未掲載ファイルも拒否するため、会社設定後のディレクトリを元の配布物として再検査しない。Pythonは不要。
+同梱ファイルの確認スクリプトは、**受け取ったZIPを新しい空ディレクトリへ展開し直し、そのルートで実行する。**スクリプトは一覧外のファイルも拒否するため、会社のtfvars・backend設定・`.terraform`・実行結果などを追加したディレクトリでは、改変がなくても失敗する。Pythonは不要。
 
 PowerShell:
 
