@@ -87,7 +87,7 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 | `input` | `bucket`、`key`、`etag`、`inputId` |
 | `attempt` | `attemptId`（実行ARNから導出する一意値）、`executionArn` |
 | `validation` | `status`、`errorCount`、検証JSONのbucket/key、固定原本のkey、入力行数（VALIDの場合） |
-| `transform` | staging参照、Glue job run ID |
+| `transform` | staging参照、Glue job run ID（`.sync`の完了後に記録） |
 | `publication` | 公開manifestのbucket/key、完了状態 |
 
 出力行数は状態データに持たず、Glueがstagingに書くmanifestで入力行数と照合する。検証結果の全文は、共通`validate_csv`の戻り値のまま、固定原本と同じattempt配下の`validation.json`に保存する。履歴は、DynamoDBの世代状態とattemptごとの参照で辿る。サービス固有のIDは比較用の値に含めない。
@@ -121,7 +121,7 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 Glue Crawlerは1つを共有し、実行のたびに対象を当該attemptのvalidated prefixへ更新する。除外パターンで`validation.json`を除き、CSVの原本だけを推論の対象にする。共有しているので、別の入力のCrawler・Catalog・変換が同時に動くと互いに干渉する。そこで、変換区間に入る前に、変換ロックで排他を取得する。
 
 - ロックを取得できない入力は、破棄せずにWaitして取得を再試行する。待機には上限を設け、超えたら失敗とする。
-- ロックは成功時も失敗時も、所有者を条件にして解放する。ただし、CrawlerがREADYになり、記録したGlue job runが終端状態になるまでは解放しない。
+- ロックは成功時も失敗時も、所有者を条件にして解放する。ただし、CrawlerがREADYになり、当該attemptのGlue job runが終端状態になるまでは解放しない。job run IDが未記録の場合は、引数`--attempt_id`が一致するjob runをすべて確認する。
 
 CrawlerとGlue jobの開始APIを呼ぶ前には、変換ロックにpendingを記録する。開始APIの応答が失われると、サービスが開始されたかどうかを処理の側から判断できないためである。pendingが残っている間は、対象のcrawlやjob runの終了を確認できない限り、ロックを解放しない。
 
@@ -154,7 +154,7 @@ AWS 2の初期設定は次を基準とする。各待機は、実行全体のTim
 
 - 一時的なサービス障害とthrottlingには、回数を制限したRetry（最大3回、指数backoff）を設ける。
 - アクセス拒否、`INPUT_CHANGED`、契約の不正、行の欠落は、自動でRetryしない。
-- Glue実行の開始など副作用のある操作は、結果が不明なときに無条件で重ねて呼ばない。保存したjob run IDと状態を確認する。
+- Glue実行の開始など副作用のある操作は、結果が不明なときに無条件で重ねて呼ばない。保存したjob run ID、未記録なら引数`--attempt_id`で特定したjob runの状態を確認する。
 - StandardのRedriveは初期運用の対象外とし、再実行は新しい実行に統一する。
 
 ## 変換と公開
@@ -167,7 +167,7 @@ Crawlerは、起動APIが成功しただけでは完了としない。完了を�
 
 Glue ETLは固定原本を読み、必須列を明示的にcastし、未知列は文字列として保持する。この出力を、Azureで比べたDrift相当の基準とする。Strict/TolerantはAzureで比較したときの対照であり、AWSで別のパイプラインを増やすことはしない。
 
-Glueは`staging/<inputId>/<attemptId>/`にだけ書き込む。入力の論理レコード数、出力行数、必須列のcastで生じたnullの件数を集計し、行数が一致しないか、castで値が欠けた場合はFailとする。金額・日時・未知列の扱いは[比較基準](architecture.md#比較基準)に従う。Step FunctionsはGlue jobの完了を`.sync`で待ち、成功後にLambdaが結果のmanifestとstagingの実体を検査する。
+Glueは`staging/<inputId>/<attemptId>/`にだけ書き込む。入力の論理レコード数、出力行数、必須列のcastで生じたnullの件数を集計し、行数が一致しないか、castで値が欠けた場合はFailとする。金額・日時・未知列の扱いは[比較基準](architecture.md#比較基準)に従う。Step FunctionsはGlue jobの完了を`.sync`で待ち、成功後にLambdaが完了結果の`Id`をjob run IDとして変換ロックと状態データへ記録してから、結果のmanifestとstagingの実体を検査する。`.sync`は完了まで結果を返さないため、Glueの実行中や、Glueの失敗で止まった実行では、job run IDは記録されない。
 
 ### 公開の確定
 
@@ -205,7 +205,7 @@ INVALIDの場合は、原本とJSONの保存が終わってから`REJECTED`へ�
 - DLQのメッセージは自動で再投入しない。原因を解消した後、会社側で手動で再実行する。
 - 中断やTimeoutで世代itemが`RUNNING`のまま残った場合は、[状態遷移の表](#世代itemと状態遷移)の「古い`RUNNING`」に従って再実行する。変換ロックが残った場合は、[中断で残ったロックの復旧](#中断で残ったロックの復旧)に従う。
 
-ログには、CSVの本文、検証エラーの全文、認証情報を出さない。Lambdaは操作ごとに、操作名、結果（`ok`または`error`）、エラーcode、inputId、attemptId、executionArn、Glue job run IDを1行のJSONで記録する。State Machineのログ（ERRORレベル、実行データを含めない）とGlueのログは、executionArnとjob run IDでLambdaのログと対応づける。ログとS3の保持期限、SNSの購読、実際の通知送信は、会社の設定とAWS 4の受け入れ確認で確定する。
+ログには、CSVの本文、検証エラーの全文、認証情報を出さない。Lambdaは操作ごとに、操作名、結果（`ok`または`error`）、エラーcode、inputId、attemptId、executionArn、Glue job run IDを1行のJSONで記録する。job run IDの記録に失敗した操作でも、`.sync`の完了結果にIDがあればログに出す。State Machineのログ（ERRORレベル、実行データを含めない）とGlueのログは、executionArnとjob run IDでLambdaのログと対応づける。ログとS3の保持期限、SNSの購読、実際の通知送信は、会社の設定とAWS 4の受け入れ確認で確定する。
 
 ## 検証の境界
 

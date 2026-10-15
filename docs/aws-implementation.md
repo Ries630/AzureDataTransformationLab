@@ -154,7 +154,7 @@ aws dynamodb get-item --table-name STATE_TABLE --key file://lock-key.json --cons
 
 1. 所有するStep Functions実行が終端状態であることを`describe-execution`で確認する。
 2. Crawlerの状態と`LastCrawl`を`get-crawler`で確認する。必要なら`stop-crawler`で停止し、`READY`と対象crawlの終端を待つ。
-3. 保存されたGlue job runを`get-job-run`で確認する。ID未記録の場合は、`get-job-runs`の結果から、引数`--attempt_id`が所有attemptと一致するjob runを探す。必要なら`batch-stop-job-run`で停止し、対象job runの終端を待つ。
+3. 保存されたGlue job runを`get-job-run`で確認する。IDはGlueの`.sync`が完了した後に記録されるため、Glueの実行中や失敗で止まった実行では未記録になる。ID未記録の場合は、`get-job-runs`の結果から、引数`--attempt_id`が所有attemptと一致するjob runを探す。必要なら`batch-stop-job-run`で停止し、対象job runの終端を待つ。
 4. 所有者を`recover.json`へ記入し、Lambdaの復旧操作を実行する。
 
 ```bash
