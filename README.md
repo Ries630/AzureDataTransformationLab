@@ -9,7 +9,7 @@ Azureサービスの習得自体ではなく、イベント駆動、オーケス
 - [プロジェクト概要](docs/project-brief.md)：目的、前提、制約、完成条件の正
 - [アーキテクチャ](docs/architecture.md)：サービス構成、処理責務、異常系の正
 - [学習計画](docs/learning-plan.md)：実装フェーズ、検証項目、利用ツールの正
-- [AWS版の計画案](docs/aws-learning-plan.md)：Azure Phase 4完了後のAWSコード作成、会社学習環境への持ち込みと構築。Azure Phase 5〜7と比較学習は構築後
+- [AWS版の計画案](docs/aws-learning-plan.md)：Azure Phase 4完了後のAWSコード作成、会社学習環境への持ち込みと構築。Azure Phase 5〜7はAWS 4の完了を待たずに進め、比較学習は構築後
 - [Phase 1の実行手順](docs/learning-plan.md#phase-1-storage)：Terraformの初期化からplan・適用・CSV確認まで
 - [後片付けと再構築](docs/lab-teardown.md)：学習環境の削除、中止時の復旧、削除後の再構築
 - [Phase 1の解説](docs/tutorials/phase-1-storage.md)：CSVの保存先からTerraformのコード、権限、実行結果を理解する
