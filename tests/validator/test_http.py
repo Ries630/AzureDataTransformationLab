@@ -240,6 +240,13 @@ class HttpContractTests(unittest.TestCase):
             self.assertNotIn("private", log_text)
             self.assertNotIn("https://", log_text)
 
+    def test_logging_failure_keeps_validation_response(self) -> None:
+        """監視ログの失敗で応答を500へ変えない。"""
+        with patch("function_app.log_validation_response", side_effect=RuntimeError("secret")):
+            response = HANDLER(request({}))
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("INVALID_REQUEST", json.loads(response.get_body())["code"])
+
     def test_invalid_pipeline_run_id_is_omitted(self) -> None:
         """UUID形式でない相関ヘッダーはイベントへ含めない。"""
         req = request({}, {"x-adf-pipeline-run-id": "bad-secret-value"})

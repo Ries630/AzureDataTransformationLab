@@ -20,9 +20,17 @@ export function isTrustedPull(event, env = process.env) {
     /^[0-9a-f]{40}$/i.test(env.EXPECTED_HEAD_SHA ?? '') && pull.head.sha === env.EXPECTED_HEAD_SHA;
 }
 
+/** stderrだけから認可失敗を判定し、診断内容は返さない。 */
+export function classifyPlanError(error) {
+  const stderr = Buffer.isBuffer(error?.stderr) ? error.stderr.toString('utf8') :
+    typeof error?.stderr === 'string' ? error.stderr : '';
+  return /AuthorizationFailed|\b403\b/i.test(stderr) ? 'authorization' : 'unknown';
+}
+
 /** CIの機密入力からsaved planを生成し、検証済みMarkdownだけを残す。 */
 export function runPlan({ root = 'infra/terraform', output, event, env = process.env,
-  initialize = runBackend, run = execute, render = renderReport } = {}) {
+  initialize = runBackend, run = execute, render = renderReport, onStage = () => {} } = {}) {
+  onStage('input');
   if (!isTrustedPull(event, env)) throw new Error('信頼できるPRではありません。');
   const inputs = JSON.parse(env.TERRAFORM_INPUTS);
   const backend = JSON.parse(env.TERRAFORM_BACKEND_CONFIG);
@@ -44,12 +52,18 @@ export function runPlan({ root = 'infra/terraform', output, event, env = process
       ownedFiles.push(path);
     }
     const call = (program, args) => run(program, args, env);
+    onStage('init');
     initialize('init', { root, env, run: call });
+    onStage('validate');
     call('terraform', [`-chdir=${root}`, 'validate', '-no-color']);
     const saved = join(directory, 'plan.tfplan');
+    onStage('plan');
     call('terraform', [`-chdir=${root}`, 'plan', '-input=false', '-no-color', '-lock-timeout=60s', `-out=${saved}`]);
+    onStage('show');
     const plan = JSON.parse(call('terraform', [`-chdir=${root}`, 'show', '-json', saved]));
+    onStage('render');
     const body = render(plan, env.ARM_SUBSCRIPTION_ID, env.TFPLAN2MD_PATH);
+    onStage('write');
     mkdirSync(dirname(output), { recursive: true, mode: 0o700 });
     writeFileSync(output, body, { mode: 0o600, flag: 'wx' });
   } finally {
@@ -65,15 +79,17 @@ function execute(program, args, env) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  let stage = 'context';
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
     if (process.argv[2] === 'check-context') {
       if (!isTrustedPull(event)) throw new Error('信頼できるPRではありません。');
     } else {
-      runPlan({ event, output: process.argv[2] });
+      runPlan({ event, output: process.argv[2], onStage: value => { stage = value; } });
     }
-  } catch {
-    console.error('PRのplan処理を中止しました。実行コンテキスト・設定・権限を確認してください。');
+  } catch (error) {
+    const category = classifyPlanError(error);
+    console.error(`PRのplan処理を中止しました。stage=${stage} category=${category}`);
     process.exitCode = 1;
   }
 }

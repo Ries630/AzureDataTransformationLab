@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { isTrustedPull, runPlan } from './plan.mjs';
+import { classifyPlanError, isTrustedPull, runPlan } from './plan.mjs';
 
 const subscription = '11111111-1111-4111-8111-111111111111';
 const sha = 'a'.repeat(40);
@@ -116,13 +116,23 @@ test('監視用の機密入力をTerraformへ渡し、作業ファイルを後�
 
 test('既存state初期化からvalidate・saved plan・showを順に実行し公開用Markdownだけを残す', (t) => {
   const f = fixture(t);
-  runPlan(f);
+  const stages = [];
+  runPlan({ ...f, onStage: stage => stages.push(stage) });
+  assert.deepEqual(stages, ['input', 'init', 'validate', 'plan', 'show', 'render', 'write']);
   assert.equal(f.calls[0], 'init');
   assert.deepEqual(f.calls.slice(1).map(call => call[2]), ['validate', 'plan', 'show']);
   assert.ok(f.calls[2].some(arg => arg.startsWith('-out=')));
   assert.ok(f.calls.every(call => !Array.isArray(call) || !call.includes('apply')));
   assert.ok(readFileSync(f.output, 'utf8').startsWith('<!-- terraform-plan:infra/terraform -->'));
   assert.throws(() => readFileSync(join(f.root, 'ci.auto.tfvars.json')));
+});
+
+test('分類はstderrだけを読み、秘密を含む診断内容を返さない', () => {
+  const privateText = 'token=ghp_secret learner@example.com AuthorizationFailed subscription-secret';
+  assert.equal(classifyPlanError({ stderr: Buffer.from(privateText) }), 'authorization');
+  assert.equal(classifyPlanError({ stderr: 'HTTP 403 Forbidden learner@example.com' }), 'authorization');
+  assert.equal(classifyPlanError({ stderr: 'token=ghp_secret learner@example.com' }), 'unknown');
+  assert.equal(classifyPlanError({ stderr: '', stdout: privateText, message: privateText }), 'unknown');
 });
 
 test('plan取得失敗時は診断やJSONを公開せず終了する', (t) => {

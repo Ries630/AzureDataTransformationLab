@@ -1,5 +1,19 @@
 locals {
   monitoring_name = "mon-${var.storage_account_name}"
+  application_insights_tables = toset([
+    "AppAvailabilityResults",
+    "AppBrowserTimings",
+    "AppDependencies",
+    "AppEvents",
+    "AppExceptions",
+    "AppMetrics",
+    "AppPageViews",
+    "AppPerformanceCounters",
+    "AppRequests",
+    "AppSystemEvents",
+    "AppTraces",
+    "AppGenAIContent",
+  ])
 }
 
 resource "azurerm_log_analytics_workspace" "lab" {
@@ -26,6 +40,18 @@ resource "azurerm_application_insights" "lab" {
   retention_in_days            = 30
   local_authentication_enabled = false
   tags                         = var.tags
+}
+
+resource "azurerm_log_analytics_workspace_table" "application_insights" {
+  for_each = var.monitoring_enabled ? local.application_insights_tables : toset([])
+
+  name                    = each.value
+  workspace_id            = azurerm_log_analytics_workspace.lab[0].id
+  plan                    = "Analytics"
+  retention_in_days       = 31
+  total_retention_in_days = 31
+
+  depends_on = [azurerm_application_insights.lab]
 }
 
 resource "azurerm_role_assignment" "function_monitoring_metrics_publisher" {

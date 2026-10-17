@@ -69,6 +69,11 @@ run "monitoring_disabled_preserves_existing_configuration" {
     condition     = length(azurerm_log_analytics_workspace.lab) == 0 && length(azurerm_application_insights.lab) == 0 && length(azurerm_monitor_diagnostic_setting.data_factory) == 0 && length(azurerm_monitor_action_group.pipeline_failure) == 0 && length(azurerm_monitor_metric_alert.pipeline_failure) == 0
     error_message = "監視無効時に監視リソースを作成してはいけません。"
   }
+
+  assert {
+    condition     = length(azurerm_log_analytics_workspace_table.application_insights) == 0
+    error_message = "監視無効時にApplication Insights用のLog Analytics tableを作成してはいけません。"
+  }
 }
 
 run "monitoring_configures_diagnostics_identity_and_failure_alert" {
@@ -108,12 +113,23 @@ run "monitoring_configures_diagnostics_identity_and_failure_alert" {
   }
 
   assert {
+    condition = toset([for table in values(azurerm_log_analytics_workspace_table.application_insights) : table.name]) == toset([
+      "AppAvailabilityResults", "AppBrowserTimings", "AppDependencies", "AppEvents", "AppExceptions", "AppMetrics",
+      "AppPageViews", "AppPerformanceCounters", "AppRequests", "AppSystemEvents", "AppTraces", "AppGenAIContent",
+      ]) && alltrue([for table in values(azurerm_log_analytics_workspace_table.application_insights) :
+      table.workspace_id == azurerm_log_analytics_workspace.lab[0].id && table.plan == "Analytics" &&
+      table.retention_in_days == 31 && table.total_retention_in_days == 31
+    ])
+    error_message = "Application Insightsの12 tableは指定workspaceのAnalytics planで保持期間を31日に設定しなければなりません。"
+  }
+
+  assert {
     condition     = azurerm_role_assignment.function_monitoring_metrics_publisher[0].scope == azurerm_application_insights.lab[0].id && azurerm_role_assignment.function_monitoring_metrics_publisher[0].role_definition_name == "Monitoring Metrics Publisher" && azurerm_role_assignment.function_monitoring_metrics_publisher[0].principal_id == azurerm_user_assigned_identity.function[0].principal_id
     error_message = "Function UAIのMonitoring Metrics PublisherはApplication Insights scopeに限定しなければなりません。"
   }
 
   assert {
-    condition     = azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"] == azurerm_application_insights.lab[0].connection_string && azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_AUTHENTICATION_STRING"] == "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD" && azurerm_function_app_flex_consumption.function[0].app_settings["LAB_STORAGE_ACCOUNT_NAME"] == azurerm_storage_account.lab.name
+    condition     = azurerm_function_app_flex_consumption.function[0].site_config[0].application_insights_connection_string == azurerm_application_insights.lab[0].connection_string && azurerm_function_app_flex_consumption.function[0].app_settings["APPLICATIONINSIGHTS_AUTHENTICATION_STRING"] == "ClientId=${azurerm_user_assigned_identity.function[0].client_id};Authorization=AAD" && azurerm_function_app_flex_consumption.function[0].app_settings["LAB_STORAGE_ACCOUNT_NAME"] == azurerm_storage_account.lab.name
     error_message = "Function AppはUAI認証のApplication Insights設定を追加し、既存app settingsを保たなければなりません。"
   }
 
