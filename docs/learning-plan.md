@@ -17,7 +17,7 @@
 
 Phaseは表の順に1つずつ実装し、完了条件を確かめてから次へ進む。完成形を一度に構築せず、Azure PortalとADF Studioで実物を確認した結果を、TerraformとGit管理の定義へ戻していく。現在の作業Phaseと進捗はIssueで管理する。
 
-Phase 4を終えた後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）を終えてから、この順で進める。[外部SQL取得（#28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)と[対応表マスタ（#29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)は、AWS側も含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
+Phase 4を終えた後は、AWS版の構築を優先した。AWS 4（会社環境での構築）の受け入れ確認は会社の手順書を待つため、その完了を待たずにPhase 5〜7をこの順で進める。[外部SQL取得（#28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)と[対応表マスタ（#29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)は、AWS側も含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
 
 学習環境が不要になったときの削除と、削除後の再構築は、[後片付けと再構築](lab-teardown.md)にまとめている。
 
