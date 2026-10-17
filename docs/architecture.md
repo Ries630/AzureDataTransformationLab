@@ -72,6 +72,7 @@ Azure Monitor Alert → Action Group → Email
 | `validated` | 入力検証を通過した原本 |
 | `rejected` | 入力検証に失敗した原本と検証結果 |
 | `output` | Mapping Data Flowによる変換結果 |
+| `state` | 入力の世代ごとの処理状態（Phase 6、[冪等性](#冪等性)） |
 
 Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。Pipeline自身が`validated`、`rejected`、`output`へ書き込むので、対象を絞らないとその書き込みで同じPipelineが再び起動してしまう。
 
@@ -88,7 +89,7 @@ Functionは、どの版のファイルを検証するかを特定するために
 
 ファイル1件の情報を返す`comp=metadata`もあるが、このAPIはETagを応答ヘッダーで返す。Web Activityは応答ヘッダーを後続のActivityへ確実に渡せないため、ETagを応答本文に含むPath Listを使う。
 
-この方法でも、ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が食い違う。初期構成ではこの制約を受け入れ、Phase 6の冪等性で扱う。
+この方法でも、ETagを確認してから原本をコピーするまでの間に入力が上書きされると、検証した版とコピーした版が食い違う。Phase 6では、コピーの後にETagを照合して版を固定する（[版の固定](#版の固定)）。
 
 ## Azure Functionsの責務
 
@@ -331,17 +332,61 @@ Budgetは超過を通知するだけで、リソースを停止しない。費�
 
 ## 冪等性
 
-Event Gridは、同じイベントを複数回配信することがある。そのため、同じ入力を複数回処理しても、二重出力や不整合が起きない設計にする。
+Event Gridは、同じイベントを複数回配信することがある。手動の再実行もある。同じ入力を複数回処理しても、二重出力や不整合が起きないようにする。この節はPhase 6の設計であり、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-blob-state.md)にある。
 
-処理識別子は、次の組み合わせを候補とする。
+### 入力の世代
 
-```text
-storage account
-+ filesystem
-+ object path
-+ ETag
-```
+入力は、`landing`の相対パスとETagの組で識別する。これを入力の世代と呼ぶ。Storageのアカウントとfilesystemは固定なので、識別子に含めない。同じパスに置き直すと、内容が同じでもETagが変わり、別の世代になる。
 
-学習環境では、入力パスとファイルハッシュの組み合わせとも比較する。
+Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
-状態の具体的な保存方法、排他制御、再試行時の状態遷移はPhase 6で決める。それまでも、最低限、出力パスと上書きの方針を決めておき、同じ入力を再実行したときの結果を説明できるようにする。
+### 状態ファイル
+
+世代ごとの処理状態は、filesystem`state`の`<相対パス>/<ETag>.json`に置く。ETagは外側の引用符を除く。
+
+| 項目 | 内容 |
+|---|---|
+| `path`、`etag` | 世代の識別子 |
+| `status` | `RUNNING`、`SUCCEEDED`、`REJECTED`のいずれか |
+| `runId` | 状態を最後に書いた実行の`RunId` |
+| `attempts` | この世代を処理した実行の回数 |
+| `updatedAt` | 最後に書いた時刻（UTC） |
+| `outputPath` | `SUCCEEDED`のとき、公開した出力のパス |
+| `contentMd5` | ADLSが返した`Content-MD5`。比較の観察用で、識別には使わない |
+
+失敗を表す`FAILED`は持たない。Pipelineの失敗やキャンセルでは状態を確実に更新できないため、終了した実行の`RUNNING`を、失敗した処理として扱う。
+
+### 排他と状態遷移
+
+Pipelineは`concurrency = 1`なので、同時に起動した実行は順番待ちになり、実行中の他のattemptはない。この前提で、実行の開始時に状態ファイルを読み、次のように決める。
+
+| 現在の状態 | 実行のきっかけ | 結果 |
+|---|---|---|
+| ファイルがない | イベントまたは手動 | `If-None-Match: *`で`RUNNING`を作り、処理する |
+| `RUNNING` | イベントまたは手動 | 前の実行は終了しているので引き継ぎ、`runId`を更新して処理する |
+| `SUCCEEDED` / `REJECTED` | イベント、または`force`なしの手動 | 何も書かずに正常終了する |
+| `SUCCEEDED` / `REJECTED` | `force = true`の手動 | `RUNNING`に戻して処理し直す |
+
+`force`はPipelineのパラメーターで、Triggerからは渡さない。初回作成の条件付き書き込みが失敗した場合は、排他の前提が崩れているので、Pipelineを失敗させる。
+
+### 出力の配置と公開
+
+各領域の出力は、世代ごとのディレクトリ`<相対パス>/<ETag>/`に置く。
+
+| 領域 | パス |
+|---|---|
+| `validated` | `<相対パス>/<ETag>/<ファイル名>` |
+| `rejected` | `<相対パス>/<ETag>/<ファイル名>`と`validation.json` |
+| `output` | `<相対パス>/<ETag>/<ファイル名>`。途中の結果は従来どおり`_staging/<RunId>` |
+
+公開の正は、状態ファイルの`SUCCEEDED`と`outputPath`である。行数の照合が一致して出力を配置した後に、状態を`SUCCEEDED`にする。配置の途中で失敗した世代は`RUNNING`のまま残り、公開済みにはならない。同じ世代の再実行は同じパスを上書きし、変換は決定的なので同じ内容になる。
+
+別の世代の結果は上書きしない。同じパスで前の世代がVALID、次の世代がINVALIDなら、両方の結果が世代ごとに残り、それぞれの状態ファイルで区別できる。
+
+### 版の固定
+
+`landing`から`validated`または`rejected`へコピーした後に、もう一度Path ListでETagを取得し、検証したETagと比べる。一致すれば、コピーした原本は検証した版である。一致しなければ`INPUT_CHANGED`としてPipelineを失敗させる。新しい版には別のイベントが届き、別の世代として処理される。以後の処理は`landing`ではなく、コピーした原本を読む。
+
+### Retry
+
+ActivityのRetryは、同じ結果を書き直すだけの操作（状態の読み取り、Path List、世代ディレクトリへのCopy）に限る。Data Flowは費用がかかるのでRetryを設定せず、失敗した世代は手動で再実行する。再実行すると、`RUNNING`のまま残った状態を引き継ぐ。
