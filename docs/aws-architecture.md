@@ -87,7 +87,7 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 | `input` | `bucket`、`key`、`etag`、`inputId` |
 | `attempt` | `attemptId`（実行ARNから導出する一意値）、`executionArn` |
 | `validation` | `status`、`errorCount`、検証JSONのbucket/key、固定原本のkey、入力行数（VALIDの場合） |
-| `transform` | staging参照、Glue job run ID（`.sync`の完了後に記録） |
+| `transform` | staging参照、Glue job run ID（`.sync`の成功後に記録） |
 | `publication` | 公開manifestのbucket/key、完了状態 |
 
 出力行数は状態データに持たず、Glueがstagingに書くmanifestで入力行数と照合する。検証結果の全文は、共通`validate_csv`の戻り値のまま、固定原本と同じattempt配下の`validation.json`に保存する。履歴は、DynamoDBの世代状態とattemptごとの参照で辿る。サービス固有のIDは比較用の値に含めない。
@@ -121,7 +121,7 @@ Step Functionsの状態データには次を含める。CSVの本文と検証エ
 Glue Crawlerは1つを共有し、実行のたびに対象を当該attemptのvalidated prefixへ更新する。除外パターンで`validation.json`を除き、CSVの原本だけを推論の対象にする。共有しているので、別の入力のCrawler・Catalog・変換が同時に動くと互いに干渉する。そこで、変換区間に入る前に、変換ロックで排他を取得する。
 
 - ロックを取得できない入力は、破棄せずにWaitして取得を再試行する。待機には上限を設け、超えたら失敗とする。
-- ロックは成功時も失敗時も、所有者を条件にして解放する。ただし、CrawlerがREADYになり、当該attemptのGlue job runが終端状態になるまでは解放しない。job run IDが未記録の場合は、引数`--attempt_id`が一致するjob runをすべて確認する。
+- ロックは成功時も失敗時も、所有者を条件にして解放する。ただし、CrawlerがREADYになり、当該attemptのGlue job runが終端状態になるまでは解放しない。job run IDが未記録の場合は、引数`--attempt_id`が一致するjob runをすべて確認する。一致するjob runが1件もない場合も、開始されなかったとは判断せずにロックを維持し、[管理者の復旧](#中断で残ったロックの復旧)でpendingを解除する。
 
 CrawlerとGlue jobの開始APIを呼ぶ前には、変換ロックにpendingを記録する。開始APIの応答が失われると、サービスが開始されたかどうかを処理の側から判断できないためである。pendingが残っている間は、対象のcrawlやjob runの終了を確認できない限り、ロックを解放しない。
 
@@ -167,7 +167,7 @@ Crawlerは、起動APIが成功しただけでは完了としない。完了を�
 
 Glue ETLは固定原本を読み、必須列を明示的にcastし、未知列は文字列として保持する。この出力を、Azureで比べたDrift相当の基準とする。Strict/TolerantはAzureで比較したときの対照であり、AWSで別のパイプラインを増やすことはしない。
 
-Glueは`staging/<inputId>/<attemptId>/`にだけ書き込む。入力の論理レコード数、出力行数、必須列のcastで生じたnullの件数を集計し、行数が一致しないか、castで値が欠けた場合はFailとする。金額・日時・未知列の扱いは[比較基準](architecture.md#比較基準)に従う。Step FunctionsはGlue jobの完了を`.sync`で待ち、成功後にLambdaが完了結果の`Id`をjob run IDとして変換ロックと状態データへ記録してから、結果のmanifestとstagingの実体を検査する。`.sync`は完了まで結果を返さないため、Glueの実行中や、Glueの失敗で止まった実行では、job run IDは記録されない。
+Glueは`staging/<inputId>/<attemptId>/`にだけ書き込む。入力の論理レコード数、出力行数、必須列のcastで生じたnullの件数を集計し、行数が一致しないか、castで値が欠けた場合はFailとする。金額・日時・未知列の扱いは[比較基準](architecture.md#比較基準)に従う。Step FunctionsはGlue jobの完了を`.sync`で待ち、成功後にLambdaが完了結果の`Id`をjob run IDとして変換ロックと状態データへ記録してから、結果のmanifestとstagingの実体を検査する。`.sync`は完了まで結果を返さないため、Glueの実行中や、Glueの失敗で止まった実行では、job run IDは記録されない。Glueが成功しても、記録するLambdaが失敗した場合や、記録の前に実行が止まった場合は、同じく未記録になる。
 
 ### 公開の確定
 
