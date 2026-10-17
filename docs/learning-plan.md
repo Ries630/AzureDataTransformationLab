@@ -17,7 +17,7 @@
 
 Phaseは表の順に1つずつ実装し、完了条件を確かめてから次へ進む。完成形を一度に構築せず、Azure PortalとADF Studioで実物を確認した結果を、TerraformとGit管理の定義へ戻していく。現在の作業Phaseと進捗はIssueで管理する。
 
-Phase 4を終えた後は、AWS版の構築を優先する。Phase 5〜7は、[AWS版の計画案](aws-learning-plan.md#進め方と順序)のAWS 4（会社環境での構築完了）を終えてから、この順で進める。[外部SQL取得（#28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)と[対応表マスタ（#29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)は、AWS側も含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
+Phase 4を終えた後は、AWS版の構築を優先した。AWS 4（会社環境での構築）の受け入れ確認は会社の手順書を待つため、その完了を待たずにPhase 5〜7をこの順で進める。[外部SQL取得（#28）](https://github.com/Ries630/AzureDataTransformationLab/issues/28)と[対応表マスタ（#29）](https://github.com/Ries630/AzureDataTransformationLab/issues/29)は、AWS側も含めて当面の対象外とし、[後から追加する機能](aws-learning-plan.md#後から追加する機能)で扱う。
 
 学習環境が不要になったときの削除と、削除後の再構築は、[後片付けと再構築](lab-teardown.md)にまとめている。
 
@@ -687,16 +687,40 @@ az consumption budget show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
 
 ## Phase 6: IdempotencyとRetry
 
-同じファイルについて、イベントの配信と手動の再実行を試す。そのうえで、次を決めて検証する。
+同じファイルの重複イベント、途中で失敗した後の再実行、正常に終わった後の再実行で、二重出力や状態の不整合が起きないことを確かめる。入力の世代、状態ファイル、出力の配置は[アーキテクチャ](architecture.md#冪等性)を正とし、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-blob-state.md)にある。
 
-- 処理識別子
-- 処理状態の保存先
-- 同時実行時の排他制御
-- 出力ファイル名と上書きの方針
-- 失敗後のRetry
-- 正常完了後の再実行
+| 変数 | 作成・変更するもの | 前提 |
+|---|---|---|
+| `idempotency_enabled` | filesystem`state`、ADFのIdentityへの`state`の書き込み権限、`pl-csv-ingestion`の状態確認・版の固定・世代ごとの出力 | `data_factory_enabled`が`true` |
 
-完了条件は、同じ入力を複数回処理しても、二重出力や不整合が起きないことである。
+新しい常時稼働のリソースは作らない。費用が増えるのは、状態ファイルの読み書きと、検証で起動するData Flowのクラスターである。
+
+### 1. 状態管理をplanで確認する
+
+`phase6.auto.tfvars`に`idempotency_enabled = true`を書いてplanを作る。追加はfilesystemとRole Assignment、更新はPipelineだけで、削除がないことを確かめる。Pipelineの変更は、Activityの追加と、出力先のパスの変更である。
+
+### 2. 承認されたplanを適用する
+
+planの内容と後片付けの方法を提示し、明示的な適用承認を受けてから適用する。適用前に作った`validated`・`rejected`・`output`のファイルは、世代ごとのパスにないので、Phase 6の確認では対象外として扱う。
+
+### 3. 重複、失敗後の再実行、完了後の再実行を確かめる
+
+Data Flowのクラスターが起動する実行は、表の3回に抑える。
+
+| 確認 | 操作 | 期待する結果 |
+|---|---|---|
+| 重複 | `orders_v1.csv`を`landing`へ置き、処理中に「今すぐトリガー」で同じ`folderPath`・`fileName`を2回実行する | 後の2回は順番待ちの後、何も書かずに正常終了する。`output`は1世代だけで、状態は`SUCCEEDED`、`attempts`は1 |
+| 失敗後の再実行 | 別名で置いた`orders_v1.csv`の実行を、Data Flowの前にADF Studioでキャンセルし、同じ入力で再実行する | 状態は`RUNNING`のまま残り、再実行が引き継いで`SUCCEEDED`になる。`attempts`は2 |
+| 完了後の再実行 | 重複で使った入力を、`force`なしと`force = true`で1回ずつ再実行する | `force`なしは何もしない。`force = true`は同じ世代のパスを同じ内容で上書きし、`attempts`が増える |
+| 版の変更 | 同じパスに`orders_invalid.csv`の内容を置き直す | 新しい世代として`REJECTED`になる。前の世代の`output`と状態は残る |
+
+各確認で、Pipelineの実行状態、状態ファイルの内容、各領域の世代ディレクトリを記録する。版の固定（コピー後のETag照合）は、コピーの瞬間に上書きを起こしにくいので、実機では確かめず、Pipelineの定義の確認だけにする。
+
+### Phase 6の完了条件
+
+- 同じ世代の重複イベントと順番待ちの実行で、出力と状態が1世代分だけになる。
+- 途中で失敗した世代を再実行すると引き継いで完了し、完了した世代は`force`がなければ処理し直さない。
+- ADR-0013の未検証の点について、確かめた結果か、未検証のまま残した理由を記録している。
 
 ## Phase 7: IaCの整理
 

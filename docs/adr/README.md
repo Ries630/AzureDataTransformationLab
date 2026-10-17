@@ -26,6 +26,7 @@
 | [0010](0010-require-function-applied-before-data-factory.md) | Data Factory有効化の前にFunction Appを適用済みにする | 承認済み |
 | [0011](0011-coordinate-input-attempts-in-dynamodb.md) | DynamoDBで入力世代と処理attemptを制御する | 承認済み |
 | [0012](0012-use-glue-spark-for-schema-evolution.md) | スキーマ変化の比較にGlue Sparkを使う | 承認済み |
+| [0013](0013-track-input-generations-in-blob-state.md) | 入力世代の処理状態をBlobの状態ファイルで管理する | 提案 |
 
 ## テンプレート
 
