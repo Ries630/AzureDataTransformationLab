@@ -75,51 +75,46 @@ def log_validation_response(
     return response
 
 
-@app.route(route="validate", methods=["POST"], trigger_arg_name="request")
-def validate(request: func.HttpRequest) -> func.HttpResponse:
-    """入力内容の判定と、呼び出し・読み取りの失敗を区別して返す。"""
-
-    def finish(response: func.HttpResponse) -> func.HttpResponse:
-        """応答を返す前に監視イベントを記録する。"""
-        return log_validation_response(request, response)
-
+def build_validation_response(request: func.HttpRequest) -> func.HttpResponse:
+    """入力内容の判定と、呼び出し・読み取りの失敗を区別した応答を組み立てる。"""
     try:
         path, etag = parse_request(request)
     except ValueError, UnicodeDecodeError:
-        return finish(
-            json_response(
-                {
-                    "code": "INVALID_REQUEST",
-                    "message": "filesystem・path・etagを確認してください。",
-                },
-                400,
-            )
+        return json_response(
+            {"code": "INVALID_REQUEST", "message": "filesystem・path・etagを確認してください。"},
+            400,
         )
     try:
-        return finish(json_response(validate_csv(read_csv(path, etag), path)))
+        return json_response(validate_csv(read_csv(path, etag), path))
     except InputChangedError:
-        return finish(
-            json_response({"code": "INPUT_CHANGED", "message": "入力のETagが変わっています。"}, 409)
+        return json_response(
+            {"code": "INPUT_CHANGED", "message": "入力のETagが変わっています。"}, 409
         )
     except StorageTimeoutError:
-        return finish(
-            json_response(
-                {"code": "STORAGE_TIMEOUT", "message": "入力の取得がタイムアウトしました。"}, 504
-            )
+        return json_response(
+            {"code": "STORAGE_TIMEOUT", "message": "入力の取得がタイムアウトしました。"}, 504
         )
     except StorageReadError:
-        return finish(
-            json_response(
-                {"code": "STORAGE_READ_FAILED", "message": "入力を取得できませんでした。"}, 502
-            )
+        return json_response(
+            {"code": "STORAGE_READ_FAILED", "message": "入力を取得できませんでした。"}, 502
         )
     except Exception:
         # SDKの例外本文にはURLや認証情報が含まれ得るため、応答とログへ展開しない。
-        return finish(
-            json_response(
-                {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
-            )
+        return json_response(
+            {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
         )
+
+
+@app.route(route="validate", methods=["POST"], trigger_arg_name="request")
+def validate(request: func.HttpRequest) -> func.HttpResponse:
+    """検証結果を返す前に監視イベントを記録する。"""
+    response = build_validation_response(request)
+    try:
+        log_validation_response(request, response)
+    except Exception:
+        # 監視ログの失敗で検証結果を500へ変えない。例外本文は機密を含み得るため記録しない。
+        pass
+    return response
 
 
 def main() -> None:
