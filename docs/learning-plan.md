@@ -202,7 +202,7 @@ jq --arg expected "${ARM_SUBSCRIPTION_ID:?}" '
 
 コードの読みどころは次の4つである。`is_hns_enabled`が階層名前空間を有効にし、`for_each`が名前をキーとして4つのFilesystemを管理する。`scope`はデータ用ロールの範囲を作成したStorageに限定する。Filesystemの`depends_on`は、Storageの存在に加えて、権限の付与が終わるのを待つために必要である。
 
-planを提示するときは、リージョンとSKU、想定する保存容量と操作回数、取得日を明記した[公式料金](https://azure.microsoft.com/pricing/details/storage/data-lake/)から費用を見積もる。Hot・LRSでも、保存容量、操作、メタデータ、外向きの転送などに従量料金がかかる。予算の目標は[プロジェクト概要](project-brief.md#学習環境の制約)にある。BudgetとCost AlertはPhase 5で追加するので、この段階には費用で自動停止する仕組みがない。
+planを提示するときは、リージョンとSKU、想定する保存容量と操作回数、取得日を明記した[公式料金](https://azure.microsoft.com/pricing/details/storage/data-lake/)から費用を見積もる。Hot・LRSでも、保存容量、操作、メタデータ、外向きの転送などに従量料金がかかる。予算の目標は[プロジェクト概要](project-brief.md#学習環境の制約)にある。BudgetはPhase 5で追加するので、この段階には費用の通知がない。Budgetを追加した後も、費用でリソースを自動停止する仕組みはない。
 
 ### 5. 承認されたplanを適用する
 
@@ -580,15 +580,110 @@ ADF Studioで設定を編集しても、発行（Publish）はしない。比較
 
 ## Phase 5: Monitoring
 
-次を構築する。
+FunctionとPipelineの実行をログから追跡し、システム障害だけをメールで通知する。あわせて、Subscription全体の費用をBudgetで監視する。作成するリソースと通知の対象は[アーキテクチャ](architecture.md#監視と通知)を正とする。
 
-- Application Insights
-- Log Analytics
-- Azure Monitor Alert
-- Action Groupによるメール通知
-- Azure BudgetとCost Alert
+| 変数 | 作成するもの | 前提 |
+|---|---|---|
+| `monitoring_enabled` | Log Analytics、Application Insights、ADFの診断設定、Pipeline失敗のMetric AlertとAction Group、FunctionのIdentityへの送信権限 | `functions_enabled`と`data_factory_enabled`が`true` |
+| `budget_enabled` | `Personal-Sandbox`全体の月次Budget（1,000円、実績80%・100%でメール） | `monitoring_enabled`が`true` |
 
-Pipelineを意図的に失敗させ、システム障害ではメールが届き、業務Rejectでは届かないことを確かめる。
+Budgetは超過を通知するだけで、リソースを停止しない。予算到達時の自動停止はこのPhaseの対象外である。
+
+### 1. 監視と通知をplanで確認する
+
+`phase2.auto.tfvars`と`phase3.auto.tfvars`を残したまま、Phase 5用の入力ファイルを追加する。通知先のメールアドレスは`sensitive`な変数として扱い、Git、Issue、PRに書かない。`monitoring_budget_start_date`には、Budgetを作る月の1日（UTC）を指定し、作成後は変えない。
+
+```bash
+# phase5.auto.tfvarsが既にある場合は内容を確認し、上書きせず編集する。
+(
+set -eu
+umask 077
+set -o noclobber
+printf 'Notification email: '
+read -r -s LAB_NOTIFICATION_EMAIL
+printf '\n'
+{
+  printf '%s\n' 'monitoring_enabled = true' 'budget_enabled = true'
+  printf 'monitoring_notification_email = "%s"\n' "$LAB_NOTIFICATION_EMAIL"
+  printf 'monitoring_budget_start_date = "%s"\n' "$(date -u +%Y-%m-01T00:00:00Z)"
+} > infra/terraform/phase5.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase5.tfplan
+terraform -chdir=infra/terraform show -no-color phase5.tfplan
+)
+```
+
+planでは次を照合する。
+
+- 追加：Log Analytics workspace、Application Insights、Application Insightsが使うLog Analyticsのtable 12件、`Monitoring Metrics Publisher`のRole Assignment、ADFの診断設定、Action Group、Metric Alert、Budgetの19件
+- 更新：Function App（`site_config`のApplication Insights接続文字列と、アプリ設定のEntra ID認証）と、Pipelineの`ValidateCsv`が送る`x-adf-pipeline-run-id`ヘッダーの2件
+- 削除：0件
+- 保存期間と取り込み上限（Log Analytics 31日・1日0.1GB、Application Insightsのtable 12件も31日）と、ローカル認証の無効化。Application Insights自体の指定は30日だが、実際の保持期間はtable側の31日になる
+- Alertの対象が`pl-csv-ingestion`の`PipelineFailedRuns`だけであること
+- 費用の見積もりと後片付けの方法
+
+Log Analyticsは取り込み量、Metric Alertは監視する時系列の数で課金される。planを提示するときは、取得日を明記した公式料金から見積もる。1日の取り込みが上限に達すると、その日の残りのログは記録されない。
+
+CIのPR planで同じ構成を読む場合は、先に[Budgetをrefresh対象へ追加する](terraform-plan-review.md#budgetをrefresh対象へ追加する)手順でCIの権限と`TERRAFORM_INPUTS`を更新する。
+
+### 2. 承認されたplanを適用し、Functionを発行する
+
+planの内容、費用、後片付けの方法を提示し、明示的な適用承認を受けてから適用する。
+
+```bash
+terraform -chdir=infra/terraform apply phase5.tfplan
+```
+
+適用すると、Action Groupの宛先に登録を知らせるメールが届く。届かない場合は迷惑メールと宛先を確かめてから次へ進む。
+
+構造化ログを出すFunctionのコードは、Terraformの適用では配置されない。[依存関係の生成](#4-azure-functions用の依存関係を生成する)で新しい配置先を作り、[Phase 2の発行手順](#6-発行して動作を確認する)と同じ方法で発行する。発行後にTerraformのplanを作り、差分がないことを確かめる。
+
+### 3. 正常・業務Reject・障害を比較する
+
+同じPipelineで次の3つを実行し、実行状態、ログ、通知を記録する。VALIDの実行ではData Flowのクラスターが起動するので、1回に抑える。
+
+| 実行 | Pipeline | Functionのログ | メール |
+|---|---|---|---|
+| `samples/valid/orders_v1.csv`を`landing`へ置く | Succeeded | `outcome`が`VALID`、`http_status`が200 | 届かない |
+| `samples/invalid/orders_invalid.csv`を`landing`へ置く | Succeeded | `outcome`が`INVALID`、`http_status`が200 | 届かない |
+| ADF Studioの「今すぐトリガー」で、存在しない`fileName`を指定して実行する | Failed | 記録されない（Functionを呼ぶ前に失敗する） | 届く。解決後に解決のメールも届く |
+
+ログはLog Analytics workspaceで次のように確かめる。ADFの診断ログとApplication Insightsのログは、反映まで数分かかることがある。
+
+```kusto
+ADFPipelineRun
+| where PipelineName == "pl-csv-ingestion" and Status in ("Succeeded", "Failed")
+| project TimeGenerated, RunId, Status, FailureType
+| join kind=leftouter (
+    AppTraces
+    | where Message has "csv_validation"
+    | extend event = parse_json(Message)
+    | project RunId = tostring(event.pipeline_run_id),
+        outcome = tostring(event.outcome), http_status = toint(event.http_status)
+  ) on RunId
+| order by TimeGenerated desc
+```
+
+Functionのログには入力のパス、値、例外の本文を含めない。Pipelineとの関連付けには、ADFが渡す実行IDだけを使う。
+
+Metric Alertは1分ごとに直近5分を評価するので、失敗してからメールが届くまで数分かかる。
+
+### 4. Budgetの設定を確かめる
+
+Budgetは通知の条件を設定から確かめる。費用データの反映には時間がかかり、学習環境の費用では閾値に届かないため、実際の通知は待たない。
+
+```bash
+az consumption budget show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
+  --budget-name "$(terraform -chdir=infra/terraform output -raw monitoring_budget_name)" \
+  --query '{amount:amount,currency:currentSpend.unit,timeGrain:timeGrain,start:timePeriod.startDate,thresholds:notifications.*.threshold,contacts:notifications.*.contactEmails}' -o json
+```
+
+金額が1,000、通貨がJPY、期間が月次、閾値が80と100、宛先が`monitoring_notification_email`に指定したアドレスだけであることを確かめ、実通知は未検証として記録する。
+
+### Phase 5の完了条件
+
+- Pipelineの実行IDで、ADFの実行結果とFunctionの判定結果を突き合わせられる。
+- システム障害ではメールが届き、業務Rejectでは届かないことを確認し、その理由を説明できる。
+- Budgetの金額・期間・閾値・宛先を確認し、実通知を検証していないことを記録している。
 
 ## Phase 6: IdempotencyとRetry
 

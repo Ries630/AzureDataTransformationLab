@@ -182,6 +182,32 @@ test('state属性の裸のsubscription_idも照合する', (t) => {
   assert.throws(() => runBackend('prepare-migration', f));
 });
 
+test('BudgetのARM形式Subscription scopeを持つstateでinitできる', (t) => {
+  const f = fixture(t);
+  f.state.resources.push({ mode: 'managed', type: 'azurerm_consumption_budget_subscription', name: 'monthly', instances: [{
+    attributes: { subscription_id: `/subscriptions/${subscription}` },
+  }] });
+  writeFileSync(join(f.root, 'terraform.tfstate'), JSON.stringify(f.state));
+  f.remote.state = f.state;
+  runBackend('prepare-migration', f);
+  f.remote.exists = true;
+  assert.deepEqual(runBackend('init', f), { initialized: true });
+});
+
+test('別SubscriptionのARM scopeと余計な子パスを拒否する', (t) => {
+  for (const value of [
+    '/subscriptions/33333333-3333-4333-8333-333333333333',
+    `/subscriptions/${subscription}/resourceGroups/rg-extra`,
+    `/subscriptions/${subscription}/`,
+    `/subscriptions/${subscription}/subscriptions/${subscription}`,
+  ]) {
+    const f = fixture(t);
+    f.state.resources[0].instances[0].attributes.subscription_id = value;
+    writeFileSync(join(f.root, 'terraform.tfstate'), JSON.stringify(f.state));
+    assert.throws(() => runBackend('prepare-migration', f));
+  }
+});
+
 test('空の保持stateと空のremote stateが一致すれば再構築準備だけを行う', (t) => {
   const f = emptyRebuildFixture(t);
   const localStateBefore = readFileSync(join(f.root, 'terraform.tfstate'), 'utf8');

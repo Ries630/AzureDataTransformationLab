@@ -10,11 +10,13 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import unittest
+import uuid
 from pathlib import Path
 
 import azure.functions as func
@@ -50,9 +52,31 @@ def parse_request(request: func.HttpRequest) -> tuple[str, str]:
     return path, etag
 
 
-@app.route(route="validate", methods=["POST"], trigger_arg_name="request")
-def validate(request: func.HttpRequest) -> func.HttpResponse:
-    """入力内容の判定と、呼び出し・読み取りの失敗を区別して返す。"""
+def log_validation_response(
+    request: func.HttpRequest, response: func.HttpResponse
+) -> func.HttpResponse:
+    """HTTP応答に対応する安全な構造化監視イベントを1件記録する。"""
+    payload = json.loads(response.get_body())
+    event = {
+        "event": "csv_validation",
+        "http_status": response.status_code,
+        "outcome": payload.get("status", payload.get("code", "INTERNAL_ERROR")),
+    }
+    run_id = request.headers.get("x-adf-pipeline-run-id", "")
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        run_id,
+    ):
+        event["pipeline_run_id"] = str(uuid.UUID(run_id))
+    logging.getLogger().log(
+        logging.ERROR if response.status_code >= 500 else logging.INFO,
+        json.dumps(event, separators=(",", ":")),
+    )
+    return response
+
+
+def build_validation_response(request: func.HttpRequest) -> func.HttpResponse:
+    """入力内容の判定と、呼び出し・読み取りの失敗を区別した応答を組み立てる。"""
     try:
         path, etag = parse_request(request)
     except ValueError, UnicodeDecodeError:
@@ -79,6 +103,18 @@ def validate(request: func.HttpRequest) -> func.HttpResponse:
         return json_response(
             {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
         )
+
+
+@app.route(route="validate", methods=["POST"], trigger_arg_name="request")
+def validate(request: func.HttpRequest) -> func.HttpResponse:
+    """検証結果を返す前に監視イベントを記録する。"""
+    response = build_validation_response(request)
+    try:
+        log_validation_response(request, response)
+    except Exception:
+        # 監視ログの失敗で検証結果を500へ変えない。例外本文は機密を含み得るため記録しない。
+        pass
+    return response
 
 
 def main() -> None:

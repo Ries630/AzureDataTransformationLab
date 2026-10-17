@@ -127,7 +127,10 @@ function checkSubscriptionAttributes(value, subscription) {
   if (!value || typeof value !== 'object') return;
   for (const [key, item] of Object.entries(value)) {
     if (['subscription_id', 'subscriptionId'].includes(key) && item != null &&
-        (typeof item !== 'string' || item.toLowerCase() !== subscription.toLowerCase())) {
+        (typeof item !== 'string' || ![
+          subscription,
+          `/subscriptions/${subscription}`,
+        ].some((allowed) => item.toLowerCase() === allowed.toLowerCase()))) {
       throw new Error('stateのSubscription属性が一致しません。');
     }
     checkSubscriptionAttributes(item, subscription);
