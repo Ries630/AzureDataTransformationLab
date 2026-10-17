@@ -614,10 +614,10 @@ terraform -chdir=infra/terraform show -no-color phase5.tfplan
 
 planでは次を照合する。
 
-- 追加：Log Analytics workspace、Application Insights、`Monitoring Metrics Publisher`のRole Assignment、ADFの診断設定、Action Group、Metric Alert、Budgetの7件
-- 更新：Function Appのアプリ設定（Application Insightsの接続文字列とEntra ID認証）と、Pipelineの`ValidateCsv`が送る`x-adf-pipeline-run-id`ヘッダーの2件
+- 追加：Log Analytics workspace、Application Insights、Application Insightsが使うLog Analyticsのtable 12件、`Monitoring Metrics Publisher`のRole Assignment、ADFの診断設定、Action Group、Metric Alert、Budgetの19件
+- 更新：Function App（`site_config`のApplication Insights接続文字列と、アプリ設定のEntra ID認証）と、Pipelineの`ValidateCsv`が送る`x-adf-pipeline-run-id`ヘッダーの2件
 - 削除：0件
-- 保存期間と取り込み上限（Log Analytics 31日・1日0.1GB、Application Insights 30日）と、ローカル認証の無効化
+- 保存期間と取り込み上限（Log Analytics 31日・1日0.1GB、Application Insightsのtable 12件も31日）と、ローカル認証の無効化。Application Insights自体の指定は30日だが、実際の保持期間はtable側の31日になる
 - Alertの対象が`pl-csv-ingestion`の`PipelineFailedRuns`だけであること
 - 費用の見積もりと後片付けの方法
 
@@ -674,10 +674,10 @@ Budgetは通知の条件を設定から確かめる。費用データの反映�
 ```bash
 az consumption budget show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
   --budget-name "$(terraform -chdir=infra/terraform output -raw monitoring_budget_name)" \
-  --query '{amount:amount,timeGrain:timeGrain,start:timePeriod.startDate,thresholds:notifications.*.threshold}' -o json
+  --query '{amount:amount,currency:currentSpend.unit,timeGrain:timeGrain,start:timePeriod.startDate,thresholds:notifications.*.threshold,contacts:notifications.*.contactEmails}' -o json
 ```
 
-金額が1,000、期間が月次、閾値が80と100であることを確かめ、実通知は未検証として記録する。
+金額が1,000、通貨がJPY、期間が月次、閾値が80と100、宛先が`monitoring_notification_email`に指定したアドレスだけであることを確かめ、実通知は未検証として記録する。
 
 ### Phase 5の完了条件
 

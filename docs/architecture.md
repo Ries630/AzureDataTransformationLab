@@ -312,7 +312,7 @@ Azure Monitor AlertとAction Groupによるメール通知の対象は、シス�
 | システム障害 | Metric AlertとAction Group | `pl-csv-ingestion`の`PipelineFailedRuns`が1件以上でメール |
 | 費用 | Subscriptionの月次Budget | `Personal-Sandbox`全体の実績が1,000円の80%・100%に達したらメール |
 
-Functionは応答ごとに、次の項目だけを持つJSONを1行記録する。HTTP 5xxはError、それ以外はInformationのレベルで記録する。
+Functionは応答ごとに、次の項目だけを持つJSONを1行記録する。HTTP 5xxはError、それ以外はInformationのレベルで記録する。ログの記録に失敗しても、検証の応答は変えない。
 
 | 項目 | 内容 |
 |---|---|
