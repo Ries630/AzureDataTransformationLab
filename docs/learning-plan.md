@@ -687,17 +687,17 @@ az consumption budget show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
 
 ## Phase 6: IdempotencyとRetry
 
-同じファイルの重複イベント、途中で失敗した後の再実行、正常に終わった後の再実行で、二重出力や状態の不整合が起きないことを確かめる。入力の世代、状態ファイル、出力の配置は[アーキテクチャ](architecture.md#冪等性)を正とし、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-blob-state.md)にある。
+同じファイルの重複イベント、途中で失敗した後の再実行、正常に終わった後の再実行で、二重出力や状態の不整合が起きないことを確かめる。入力の世代、処理状態、出力の配置は[アーキテクチャ](architecture.md#冪等性)を正とし、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-table-storage.md)にある。
 
 | 変数 | 作成・変更するもの | 前提 |
 |---|---|---|
-| `idempotency_enabled` | filesystem`state`、ADFのIdentityへの`state`の書き込み権限、`pl-csv-ingestion`の状態確認・版の固定・世代ごとの出力 | `data_factory_enabled`が`true` |
+| `idempotency_enabled` | Table`ingestionstate`、ADFのIdentityへのTableの書き込み権限、`pl-csv-ingestion`の状態確認・版の固定・世代ごとの出力 | `data_factory_enabled`が`true` |
 
-新しい常時稼働のリソースは作らない。費用が増えるのは、状態ファイルの読み書きと、検証で起動するData Flowのクラスターである。
+新しい常時稼働のリソースは作らない。費用が増えるのは、Tableの読み書きと、検証で起動するData Flowのクラスターである。
 
 ### 1. 状態管理をplanで確認する
 
-`phase6.auto.tfvars`に`idempotency_enabled = true`を書いてplanを作る。追加はfilesystemとRole Assignment、更新はPipelineだけで、削除がないことを確かめる。Pipelineの変更は、Activityの追加と、出力先のパスの変更である。
+`phase6.auto.tfvars`に`idempotency_enabled = true`を書いてplanを作る。追加はTableとRole Assignment、更新はPipelineだけで、削除がないことを確かめる。Pipelineの変更は、Activityの追加と、出力先のパスの変更である。
 
 ### 2. 承認されたplanを適用する
 
@@ -714,7 +714,7 @@ Data Flowのクラスターが起動する実行は、表の3回に抑える。
 | 完了後の再実行 | 重複で使った入力を、`force`なしと`force = true`で1回ずつ再実行する | `force`なしは何もしない。`force = true`は同じ世代のパスを同じ内容で上書きし、`attempts`が増える |
 | 版の変更 | 同じパスに`orders_invalid.csv`の内容を置き直す | 新しい世代として`REJECTED`になる。前の世代の`output`と状態は残る |
 
-各確認で、Pipelineの実行状態、状態ファイルの内容、各領域の世代ディレクトリを記録する。版の固定（コピー後のETag照合）は、コピーの瞬間に上書きを起こしにくいので、実機では確かめず、Pipelineの定義の確認だけにする。
+各確認で、Pipelineの実行状態、Tableのエンティティ、各領域の世代ディレクトリを記録する。版の固定（コピー後のETag照合）は、コピーの瞬間に上書きを起こしにくいので、実機では確かめず、Pipelineの定義の確認だけにする。
 
 ### Phase 6の完了条件
 

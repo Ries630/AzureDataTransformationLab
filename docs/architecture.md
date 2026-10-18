@@ -72,7 +72,6 @@ Azure Monitor Alert → Action Group → Email
 | `validated` | 入力検証を通過した原本 |
 | `rejected` | 入力検証に失敗した原本と検証結果 |
 | `output` | Mapping Data Flowによる変換結果 |
-| `state` | 入力の世代ごとの処理状態（Phase 6、[冪等性](#冪等性)） |
 
 Storage Event Triggerは`landing`だけを対象とし、CSVのパスまたは拡張子で絞り込む。Pipeline自身が`validated`、`rejected`、`output`へ書き込むので、対象を絞らないとその書き込みで同じPipelineが再び起動してしまう。
 
@@ -332,7 +331,7 @@ Budgetは超過を通知するだけで、リソースを停止しない。費�
 
 ## 冪等性
 
-Event Gridは、同じイベントを複数回配信することがある。手動の再実行もある。同じ入力を複数回処理しても、二重出力や不整合が起きないようにする。この節はPhase 6の設計であり、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-blob-state.md)にある。
+Event Gridは、同じイベントを複数回配信することがある。手動の再実行もある。同じ入力を複数回処理しても、二重出力や不整合が起きないようにする。この節はPhase 6の設計であり、判断の理由は[ADR-0013](adr/0013-track-input-generations-in-table-storage.md)にある。
 
 ### 入力の世代
 
@@ -340,17 +339,16 @@ Event Gridは、同じイベントを複数回配信することがある。手�
 
 Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
-### 状態ファイル
+### 処理状態
 
-世代ごとの処理状態は、filesystem`state`の`<相対パス>/<ETag>.json`に置く。ETagは外側の引用符を除く。
+世代ごとの処理状態は、入力用StorageのTable`ingestionstate`に1エンティティずつ置く。`PartitionKey`は相対パスをURLエンコードした値（`/`も符号化する）、`RowKey`は外側の引用符を除いたETagとする。
 
 | 項目 | 内容 |
 |---|---|
-| `path`、`etag` | 世代の識別子 |
+| `path`、`etag` | 世代の識別子（符号化前） |
 | `status` | `RUNNING`、`SUCCEEDED`、`REJECTED`のいずれか |
 | `runId` | 状態を最後に書いた実行の`RunId` |
 | `attempts` | この世代を処理した実行の回数 |
-| `updatedAt` | 最後に書いた時刻（UTC） |
 | `outputPath` | `SUCCEEDED`のとき、公開した出力のパス |
 | `contentMd5` | ADLSが返した`Content-MD5`。比較の観察用で、識別には使わない |
 
@@ -358,16 +356,25 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
 ### 排他と状態遷移
 
-Pipelineは`concurrency = 1`なので、同時に起動した実行は順番待ちになり、実行中の他のattemptはない。この前提で、実行の開始時に状態ファイルを読み、次のように決める。
+状態の書き込みは、すべて条件付きにする。
+
+- 初回は、エンティティの挿入で取得する。既に存在すれば409になり、上書きしない。
+- 以後の更新は、実行の開始時に読み取った`odata.etag`を`If-Match`に指定する。読み取りから更新までの間に別の実行が書いていれば412になり、上書きしない。
+
+409と412はどちらも、別の実行が同じ世代を処理していることを示すので、Pipelineを失敗させる。
+
+同時に起動した実行は、Pipelineの`concurrency = 1`で順番待ちになる。そのため、開始時に見つかった`RUNNING`は、終了した前の実行が残したものと判断できる。状態は、実行の開始時に読み取った内容で次のように決める。
 
 | 現在の状態 | 実行のきっかけ | 結果 |
 |---|---|---|
-| ファイルがない | イベントまたは手動 | `If-None-Match: *`で`RUNNING`を作り、処理する |
-| `RUNNING` | イベントまたは手動 | 前の実行は終了しているので引き継ぎ、`runId`を更新して処理する |
+| エンティティがない | イベントまたは手動 | 挿入で`RUNNING`を作り、処理する |
+| `RUNNING` | イベントまたは手動 | 前の実行を引き継ぎ、`runId`を条件付きで更新して処理する |
 | `SUCCEEDED` / `REJECTED` | イベント、または`force`なしの手動 | 何も書かずに正常終了する |
-| `SUCCEEDED` / `REJECTED` | `force = true`の手動 | `RUNNING`に戻して処理し直す |
+| `SUCCEEDED` / `REJECTED` | `force = true`の手動 | 条件付きで`RUNNING`に戻して処理し直す |
 
-`force`はPipelineのパラメーターで、Triggerからは渡さない。初回作成の条件付き書き込みが失敗した場合は、排他の前提が崩れているので、Pipelineを失敗させる。
+`force`はPipelineのパラメーターで、Triggerからは渡さない。
+
+並列に実行する場合は、`RUNNING`を引き継ぐ前に、`runId`の実行が終わったことをADFの実行状態で確かめる必要がある。AWS版がDescribeExecutionで確かめるのと同じである。この確認は、並列化が必要になるまで実装しない。
 
 ### 出力の配置と公開
 
@@ -379,9 +386,9 @@ Pipelineは`concurrency = 1`なので、同時に起動した実行は順番待�
 | `rejected` | `<相対パス>/<ETag>/<ファイル名>`と`validation.json` |
 | `output` | `<相対パス>/<ETag>/<ファイル名>`。途中の結果は従来どおり`_staging/<RunId>` |
 
-公開の正は、状態ファイルの`SUCCEEDED`と`outputPath`である。行数の照合が一致して出力を配置した後に、状態を`SUCCEEDED`にする。配置の途中で失敗した世代は`RUNNING`のまま残り、公開済みにはならない。同じ世代の再実行は同じパスを上書きし、変換は決定的なので同じ内容になる。
+公開の正は、処理状態の`SUCCEEDED`と`outputPath`である。行数の照合が一致して出力を配置した後に、状態を`SUCCEEDED`にする。配置の途中で失敗した世代は`RUNNING`のまま残り、公開済みにはならない。同じ世代の再実行は同じパスを上書きし、変換は決定的なので同じ内容になる。
 
-別の世代の結果は上書きしない。同じパスで前の世代がVALID、次の世代がINVALIDなら、両方の結果が世代ごとに残り、それぞれの状態ファイルで区別できる。
+別の世代の結果は上書きしない。同じパスで前の世代がVALID、次の世代がINVALIDなら、両方の結果が世代ごとに残り、それぞれの処理状態で区別できる。
 
 ### 版の固定
 
@@ -389,4 +396,4 @@ Pipelineは`concurrency = 1`なので、同時に起動した実行は順番待�
 
 ### Retry
 
-ActivityのRetryは、同じ結果を書き直すだけの操作（状態の読み取り、Path List、世代ディレクトリへのCopy）に限る。Data Flowは費用がかかるのでRetryを設定せず、失敗した世代は手動で再実行する。再実行すると、`RUNNING`のまま残った状態を引き継ぐ。
+ActivityのRetryは、同じ結果を書き直すだけの操作（処理状態の読み取り、Path List、世代ディレクトリへのCopy）に限る。Data Flowは費用がかかるのでRetryを設定せず、失敗した世代は手動で再実行する。再実行すると、`RUNNING`のまま残った状態を引き継ぐ。
