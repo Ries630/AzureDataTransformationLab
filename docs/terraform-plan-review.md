@@ -91,8 +91,9 @@ custom roleの定義とassignable scopeはlab Resource Groupに置き、assignme
 - Data Factoryを含める場合：`data_factory_enabled: true`。名前が既定と異なる場合は`data_factory_name`と`data_factory_ir_name`も指定する
 - Phase 4の比較用Data Flowを作成している間：`schema_evolution_lab_enabled: true`。`data_factory_enabled`が前提で、後片付けでData Flowを削除したら外す
 - Phase 5の監視を作成している間：`monitoring_enabled: true`と`monitoring_notification_email`。Budgetも作成している場合は`budget_enabled: true`と、作成時と同じ`monitoring_budget_start_date`を指定する
+- Phase 6の処理状態を作成している間：`idempotency_enabled: true`。`data_factory_enabled`が前提
 
-`functions_enabled`、`data_factory_enabled`、`schema_evolution_lab_enabled`、`monitoring_enabled`、`budget_enabled`のうち実環境で有効なものがsecretにない場合はTerraformの既定値`false`が使われ、既存のFunction AppやData Factoryを削除するplanが出る。そのplanは適用せず、secretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
+`functions_enabled`、`data_factory_enabled`、`schema_evolution_lab_enabled`、`monitoring_enabled`、`budget_enabled`、`idempotency_enabled`のうち実環境で有効なものがsecretにない場合はTerraformの既定値`false`が使われ、既存のFunction AppやData Factoryを削除するplanが出る。そのplanは適用せず、secretを修正してから再planする。CI用rootの権限追加側では、同じFunction App名を入力し、`functions_access_enabled = true`を指定する。
 
 再開は次の順序で行う。
 
