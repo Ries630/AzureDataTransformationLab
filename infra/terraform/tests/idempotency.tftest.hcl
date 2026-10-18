@@ -107,15 +107,15 @@ run "idempotency_adds_state_table_and_child_pipeline" {
   }
 
   assert {
-    # 状態の書き込みは、初回の挿入（POST）を除き、すべてIf-Matchで条件付きにする。
+    # 状態の書き込みは、初回の挿入（POST）を除き、すべてIf-Matchで条件付きにし、本文にもキーを含める。
     condition = alltrue([
       for a in concat(
         flatten([for c in jsondecode(azurerm_data_factory_pipeline.csv_ingestion[0].activities_json)[index(jsondecode(azurerm_data_factory_pipeline.csv_ingestion[0].activities_json)[*].name, "ClaimOrSkip")].typeProperties.cases : c.activities]),
         jsondecode(azurerm_data_factory_pipeline.process_generation[0].activities_json)
-      ) : contains(keys(a.typeProperties.headers), "If-Match")
+      ) : contains(keys(a.typeProperties.headers), "If-Match") && contains(keys(a.typeProperties.body), "PartitionKey") && contains(keys(a.typeProperties.body), "RowKey")
       if a.type == "WebActivity" && a.typeProperties.method == "PUT" && strcontains(a.typeProperties.url.value, ".table.core.windows.net/")
     ])
-    error_message = "状態Tableの更新はIf-Matchで条件付きにしなければなりません。"
+    error_message = "状態Tableの更新はIf-Matchで条件付きにし、本文にPartitionKeyとRowKeyを含めなければなりません。"
   }
 
   assert {

@@ -315,6 +315,8 @@
                   "If-Match": "@activity('ReadState').output.value[0]['odata.etag']"
                 },
                 "body": {
+                  "PartitionKey": "@variables('partitionKey')",
+                  "RowKey": "@variables('inputEtag')",
                   "path": "@variables('relativePath')",
                   "etag": "@variables('inputEtag')",
                   "status": "RUNNING",

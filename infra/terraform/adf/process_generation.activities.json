@@ -641,6 +641,8 @@
         "If-Match": "@activity('ReadStateBeforeComplete').output.value[0]['odata.etag']"
       },
       "body": {
+        "PartitionKey": "@pipeline().parameters.partitionKey",
+        "RowKey": "@pipeline().parameters.inputEtag",
         "path": "@pipeline().parameters.relativePath",
         "etag": "@pipeline().parameters.inputEtag",
         "status": "@variables('finalStatus')",
