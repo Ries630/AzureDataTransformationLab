@@ -341,7 +341,7 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
 ### 処理状態
 
-世代ごとの処理状態は、入力用StorageのTable`ingestionstate`に1エンティティずつ置く。`PartitionKey`は相対パスをURLエンコードした値（`/`も符号化する）、`RowKey`は外側の引用符を除いたETagとする。
+世代ごとの処理状態は、入力用StorageのTable`ingestionstate`に1エンティティずつ置く。`PartitionKey`は相対パスのbase64で、Tableのキーに使えない`/`を`_`に、`+`を`-`に置き換える。`RowKey`は外側の引用符を除いたETagとする。
 
 | 項目 | 内容 |
 |---|---|
@@ -349,8 +349,7 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 | `status` | `RUNNING`、`SUCCEEDED`、`REJECTED`のいずれか |
 | `runId` | 状態を最後に書いた実行の`RunId` |
 | `attempts` | この世代を処理した実行の回数 |
-| `outputPath` | `SUCCEEDED`のとき、公開した出力のパス |
-| `contentMd5` | ADLSが返した`Content-MD5`。比較の観察用で、識別には使わない |
+| `resultPath` | `SUCCEEDED`なら公開した出力、`REJECTED`なら検証結果のパス |
 
 失敗を表す`FAILED`は持たない。Pipelineの失敗やキャンセルでは状態を確実に更新できないため、終了した実行の`RUNNING`を、失敗した処理として扱う。
 
@@ -377,6 +376,17 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
 並列に実行する場合は、`RUNNING`を引き継ぐ前に、`runId`の実行が終わったことをADFの実行状態で確かめる必要がある。AWS版がDescribeExecutionで確かめるのと同じである。この確認は、並列化が必要になるまで実装しない。
 
+### Pipelineの構成
+
+ADFでは、SwitchやIf Conditionの中に、さらにSwitchやIf Conditionを置けない。そこで処理を2つのPipelineに分ける。
+
+| Pipeline | 内容 |
+|---|---|
+| `pl-csv-ingestion` | Triggerから起動する。入力の世代を特定し、処理状態を読んで、挿入・引き継ぎ・何もしないを決める。処理する場合は子Pipelineを呼び、完了を待つ |
+| `pl-csv-process-generation` | 検証、コピー、版の固定、変換、公開、処理状態の完了を行う |
+
+子Pipelineが失敗すると親も失敗するので、[監視と通知](#監視と通知)のAlertは親の失敗だけを数えればよい。FunctionのログとADFの実行結果は、子が親の`RunId`を`x-adf-pipeline-run-id`で渡すことで、親の実行IDで突き合わせる。
+
 ### 出力の配置と公開
 
 各領域の出力は、世代ごとのディレクトリ`<相対パス>/<ETag>/`に置く。
@@ -387,7 +397,7 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 | `rejected` | `<相対パス>/<ETag>/<ファイル名>`と`validation.json` |
 | `output` | `<相対パス>/<ETag>/<ファイル名>`。途中の結果は従来どおり`_staging/<RunId>` |
 
-公開の正は、処理状態の`SUCCEEDED`と`outputPath`である。行数の照合が一致して出力を配置した後に、状態を`SUCCEEDED`にする。配置の途中で失敗した世代は`RUNNING`のまま残り、公開済みにはならない。同じ世代の再実行は同じパスを上書きし、変換は決定的なので同じ内容になる。
+公開の正は、処理状態の`SUCCEEDED`と`resultPath`である。行数の照合が一致して出力を配置した後に、状態を`SUCCEEDED`にする。配置の途中で失敗した世代は`RUNNING`のまま残り、公開済みにはならない。同じ世代の再実行は同じパスを上書きし、変換は決定的なので同じ内容になる。
 
 別の世代の結果は上書きしない。同じパスで前の世代がVALID、次の世代がINVALIDなら、両方の結果が世代ごとに残り、それぞれの処理状態で区別できる。
 
@@ -397,4 +407,4 @@ Pipelineの1回の実行をattemptと呼び、ADFの`RunId`で区別する。
 
 ### Retry
 
-ActivityのRetryは、同じ結果を書き直すだけの操作（処理状態の読み取り、Path List、世代ディレクトリへのCopy）に限る。Data Flowは費用がかかるのでRetryを設定せず、失敗した世代は手動で再実行する。再実行すると、`RUNNING`のまま残った状態を引き継ぐ。
+ActivityのRetryは、同じ結果を書き直すだけの操作（処理状態の読み取り、Path List、世代ディレクトリへのCopy）に限る。処理状態の書き込みはRetryしない。応答を失った書き込みを再送すると、自分の書き込みと競合して409や412になるためである。Data Flowは費用がかかるのでRetryを設定せず、失敗した世代は手動で再実行する。再実行すると、`RUNNING`のまま残った状態を引き継ぐ。

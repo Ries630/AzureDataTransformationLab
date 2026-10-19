@@ -87,6 +87,7 @@ test('Data Factory用の入力を許可する', (t) => {
   input.data_factory_name = 'adf-exampletest';
   input.data_factory_ir_name = 'ir-exampletest';
   input.schema_evolution_lab_enabled = true;
+  input.idempotency_enabled = true;
   f.env.TERRAFORM_INPUTS = JSON.stringify(input);
   runPlan(f);
   assert.equal(f.calls[0], 'init');

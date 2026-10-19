@@ -1,0 +1,661 @@
+[
+  {
+    "name": "BuildGenerationDir",
+    "type": "SetVariable",
+    "typeProperties": {
+      "variableName": "generationDir",
+      "value": {
+        "value": "@concat(pipeline().parameters.relativePath, '/', pipeline().parameters.inputEtag)",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "ValidateCsv",
+    "type": "AzureFunctionActivity",
+    "dependsOn": [
+      {
+        "activity": "BuildGenerationDir",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 2,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "functionName": "validate",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "x-adf-pipeline-run-id": "@{pipeline().parameters.ownerRunId}"
+      },
+      "body": {
+        "filesystem": "landing",
+        "path": "@pipeline().parameters.relativePath",
+        "etag": "@concat('\"', pipeline().parameters.inputEtag, '\"')"
+      }
+    },
+    "linkedServiceName": {
+      "referenceName": "ls-function-validator",
+      "type": "LinkedServiceReference"
+    }
+  },
+  {
+    "name": "RouteByStatus",
+    "type": "Switch",
+    "dependsOn": [
+      {
+        "activity": "ValidateCsv",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "on": {
+        "value": "@activity('ValidateCsv').output.status",
+        "type": "Expression"
+      },
+      "cases": [
+        {
+          "value": "VALID",
+          "activities": [
+            {
+              "name": "CopyToValidated",
+              "type": "Copy",
+              "policy": {
+                "timeout": "0.00:10:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "BinarySource",
+                  "storeSettings": {
+                    "type": "AzureBlobFSReadSettings",
+                    "recursive": false
+                  }
+                },
+                "sink": {
+                  "type": "BinarySink",
+                  "storeSettings": {
+                    "type": "AzureBlobFSWriteSettings"
+                  }
+                }
+              },
+              "inputs": [
+                {
+                  "referenceName": "ds_adls_binary",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "landing",
+                    "folderPath": "@pipeline().parameters.relativeDir",
+                    "fileName": "@pipeline().parameters.fileName"
+                  }
+                }
+              ],
+              "outputs": [
+                {
+                  "referenceName": "ds_adls_binary",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "validated",
+                    "folderPath": "@variables('generationDir')",
+                    "fileName": "@pipeline().parameters.fileName"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "TransformOrders",
+              "type": "ExecuteDataFlow",
+              "dependsOn": [
+                {
+                  "activity": "CopyToValidated",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "timeout": "0.00:30:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "dataFlow": {
+                  "referenceName": "df_transform_orders",
+                  "type": "DataFlowReference",
+                  "datasetParameters": {
+                    "source1": {
+                      "fileSystem": "validated",
+                      "folderPath": "@variables('generationDir')",
+                      "fileName": "@pipeline().parameters.fileName"
+                    },
+                    "sink1": {
+                      "fileSystem": "output",
+                      "folderPath": "@concat('_staging/', pipeline().RunId)",
+                      "fileName": ""
+                    }
+                  }
+                },
+                "compute": {
+                  "coreCount": 8,
+                  "computeType": "General"
+                },
+                "integrationRuntime": {
+                  "referenceName": "${ir_name}",
+                  "type": "IntegrationRuntimeReference"
+                }
+              }
+            },
+            {
+              "name": "JudgeRowCounts",
+              "type": "SetVariable",
+              "dependsOn": [
+                {
+                  "activity": "TransformOrders",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "variableName": "publishStatus",
+                "value": {
+                  "value": "@if(equals(activity('TransformOrders').output.runStatus.metrics.sink1.rowsWritten, activity('TransformOrders').output.runStatus.metrics.sink1.sources.source1.rowsRead), 'ok', 'dropped')",
+                  "type": "Expression"
+                }
+              }
+            },
+            {
+              "name": "RecordRowCounts",
+              "type": "SetVariable",
+              "dependsOn": [
+                {
+                  "activity": "TransformOrders",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "variableName": "rowCounts",
+                "value": {
+                  "value": "@concat('rowsRead=', string(activity('TransformOrders').output.runStatus.metrics.sink1.sources.source1.rowsRead), ', rowsWritten=', string(activity('TransformOrders').output.runStatus.metrics.sink1.rowsWritten))",
+                  "type": "Expression"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "value": "INVALID",
+          "activities": [
+            {
+              "name": "CopyToRejected",
+              "type": "Copy",
+              "policy": {
+                "timeout": "0.00:10:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "BinarySource",
+                  "storeSettings": {
+                    "type": "AzureBlobFSReadSettings",
+                    "recursive": false
+                  }
+                },
+                "sink": {
+                  "type": "BinarySink",
+                  "storeSettings": {
+                    "type": "AzureBlobFSWriteSettings"
+                  }
+                }
+              },
+              "inputs": [
+                {
+                  "referenceName": "ds_adls_binary",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "landing",
+                    "folderPath": "@pipeline().parameters.relativeDir",
+                    "fileName": "@pipeline().parameters.fileName"
+                  }
+                }
+              ],
+              "outputs": [
+                {
+                  "referenceName": "ds_adls_binary",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "rejected",
+                    "folderPath": "@variables('generationDir')",
+                    "fileName": "@pipeline().parameters.fileName"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "SaveValidationResult",
+              "type": "WebActivity",
+              "dependsOn": [
+                {
+                  "activity": "CopyToRejected",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "timeout": "0.00:02:00",
+                "retry": 2,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "method": "PUT",
+                "url": {
+                  "value": "@concat('https://${storage_account_name}.blob.core.windows.net/rejected/', replace(encodeUriComponent(concat(variables('generationDir'), '/validation.json')), '%2F', '/'))",
+                  "type": "Expression"
+                },
+                "headers": {
+                  "x-ms-version": "2020-10-02",
+                  "x-ms-blob-type": "BlockBlob",
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "sourcePath": "@pipeline().parameters.relativePath",
+                  "status": "@activity('ValidateCsv').output.status",
+                  "errorCount": "@activity('ValidateCsv').output.errorCount",
+                  "errors": "@activity('ValidateCsv').output.errors"
+                },
+                "authentication": {
+                  "type": "MSI",
+                  "resource": "https://storage.azure.com",
+                  "password": null,
+                  "pfx": null
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "defaultActivities": [
+        {
+          "name": "UnexpectedStatus",
+          "type": "Fail",
+          "typeProperties": {
+            "message": {
+              "value": "@concat('検証結果が想定外です: ', string(activity('ValidateCsv').output))",
+              "type": "Expression"
+            },
+            "errorCode": "UNEXPECTED_VALIDATION_STATUS"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "ListLandingDirAfterCopy",
+    "type": "WebActivity",
+    "dependsOn": [
+      {
+        "activity": "RouteByStatus",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 2,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "method": "GET",
+      "url": {
+        "value": "@concat('https://${storage_account_name}.dfs.core.windows.net/landing?resource=filesystem&recursive=false', if(equals(pipeline().parameters.relativeDir, ''), '', concat('&directory=', encodeUriComponent(pipeline().parameters.relativeDir))))",
+        "type": "Expression"
+      },
+      "headers": {
+        "x-ms-version": "2020-10-02"
+      },
+      "authentication": {
+        "type": "MSI",
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
+      }
+    }
+  },
+  {
+    "name": "PickInputEntryAfterCopy",
+    "type": "Filter",
+    "dependsOn": [
+      {
+        "activity": "ListLandingDirAfterCopy",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "items": {
+        "value": "@activity('ListLandingDirAfterCopy').output.paths",
+        "type": "Expression"
+      },
+      "condition": {
+        "value": "@equals(item().name, pipeline().parameters.relativePath)",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "CheckInputUnchanged",
+    "type": "IfCondition",
+    "dependsOn": [
+      {
+        "activity": "PickInputEntryAfterCopy",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "expression": {
+        "value": "@equals(string(first(union(activity('PickInputEntryAfterCopy').output.Value, createArray(json('{\"etag\":\"\"}')))).etag), pipeline().parameters.inputEtag)",
+        "type": "Expression"
+      },
+      "ifFalseActivities": [
+        {
+          "name": "InputChangedAfterCopy",
+          "type": "Fail",
+          "typeProperties": {
+            "message": {
+              "value": "@concat('コピーの間に入力が更新されたため、この世代を確定しません: ', pipeline().parameters.relativePath)",
+              "type": "Expression"
+            },
+            "errorCode": "INPUT_CHANGED"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "PublishOutput",
+    "type": "Switch",
+    "dependsOn": [
+      {
+        "activity": "CheckInputUnchanged",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "on": {
+        "value": "@variables('publishStatus')",
+        "type": "Expression"
+      },
+      "cases": [
+        {
+          "value": "ok",
+          "activities": [
+            {
+              "name": "RenameOutput",
+              "type": "Copy",
+              "policy": {
+                "timeout": "0.00:10:00",
+                "retry": 1,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "source": {
+                  "type": "DelimitedTextSource",
+                  "storeSettings": {
+                    "type": "AzureBlobFSReadSettings",
+                    "recursive": false,
+                    "wildcardFileName": "part-*.csv"
+                  }
+                },
+                "sink": {
+                  "type": "DelimitedTextSink",
+                  "storeSettings": {
+                    "type": "AzureBlobFSWriteSettings"
+                  }
+                }
+              },
+              "inputs": [
+                {
+                  "referenceName": "ds_adls_csv",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "output",
+                    "folderPath": "@concat('_staging/', pipeline().RunId)",
+                    "fileName": ""
+                  }
+                }
+              ],
+              "outputs": [
+                {
+                  "referenceName": "ds_adls_csv",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "output",
+                    "folderPath": "@variables('generationDir')",
+                    "fileName": "@pipeline().parameters.fileName"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "DeleteStaging",
+              "type": "Delete",
+              "dependsOn": [
+                {
+                  "activity": "RenameOutput",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "timeout": "0.00:05:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "dataset": {
+                  "referenceName": "ds_adls_csv",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "fileSystem": "output",
+                    "folderPath": "@concat('_staging/', pipeline().RunId)",
+                    "fileName": ""
+                  }
+                },
+                "storeSettings": {
+                  "type": "AzureBlobFSReadSettings",
+                  "recursive": true
+                },
+                "enableLogging": false
+              }
+            }
+          ]
+        },
+        {
+          "value": "dropped",
+          "activities": [
+            {
+              "name": "RowsDroppedInTransform",
+              "type": "Fail",
+              "typeProperties": {
+                "message": {
+                  "value": "@concat('Data Flowで変換できない行があったためoutputへ配置しません（', variables('rowCounts'), '）。中間結果はoutput/_staging/', pipeline().RunId, 'に残します。')",
+                  "type": "Expression"
+                },
+                "errorCode": "ROWS_DROPPED_IN_TRANSFORM"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "SetFinalStatus",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "PublishOutput",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "finalStatus",
+      "value": {
+        "value": "@if(equals(activity('ValidateCsv').output.status, 'VALID'), 'SUCCEEDED', 'REJECTED')",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "ReadStateBeforeComplete",
+    "type": "WebActivity",
+    "dependsOn": [
+      {
+        "activity": "SetFinalStatus",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 2,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "method": "GET",
+      "url": {
+        "value": "@concat('https://${storage_account_name}.table.core.windows.net/${state_table_name}()?$filter=', encodeUriComponent(concat('PartitionKey eq ''', pipeline().parameters.partitionKey, ''' and RowKey eq ''', pipeline().parameters.inputEtag, '''')))",
+        "type": "Expression"
+      },
+      "headers": {
+        "x-ms-version": "2019-02-02",
+        "Accept": "application/json;odata=minimalmetadata"
+      },
+      "authentication": {
+        "type": "MSI",
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
+      }
+    }
+  },
+  {
+    "name": "CheckStateOwner",
+    "type": "IfCondition",
+    "dependsOn": [
+      {
+        "activity": "ReadStateBeforeComplete",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "expression": {
+        "value": "@equals(string(first(union(activity('ReadStateBeforeComplete').output.value, createArray(json('{\"runId\":\"\"}')))).runId), pipeline().parameters.ownerRunId)",
+        "type": "Expression"
+      },
+      "ifFalseActivities": [
+        {
+          "name": "StateOwnerChanged",
+          "type": "Fail",
+          "typeProperties": {
+            "message": {
+              "value": "@concat('別の実行がこの世代を引き継いだため、状態を更新しません: ', pipeline().parameters.ownerRunId)",
+              "type": "Expression"
+            },
+            "errorCode": "STATE_OWNER_CHANGED"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "CompleteState",
+    "type": "WebActivity",
+    "dependsOn": [
+      {
+        "activity": "CheckStateOwner",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 0,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "method": "PUT",
+      "url": {
+        "value": "@concat('https://${storage_account_name}.table.core.windows.net/${state_table_name}(PartitionKey=''', pipeline().parameters.partitionKey, ''',RowKey=''', pipeline().parameters.inputEtag, ''')')",
+        "type": "Expression"
+      },
+      "headers": {
+        "x-ms-version": "2019-02-02",
+        "Accept": "application/json;odata=minimalmetadata",
+        "Content-Type": "application/json",
+        "If-Match": "@activity('ReadStateBeforeComplete').output.value[0]['odata.etag']"
+      },
+      "body": {
+        "PartitionKey": "@pipeline().parameters.partitionKey",
+        "RowKey": "@pipeline().parameters.inputEtag",
+        "path": "@pipeline().parameters.relativePath",
+        "etag": "@pipeline().parameters.inputEtag",
+        "status": "@variables('finalStatus')",
+        "runId": "@pipeline().parameters.ownerRunId",
+        "attempts": "@activity('ReadStateBeforeComplete').output.value[0].attempts",
+        "resultPath": "@if(equals(variables('finalStatus'), 'SUCCEEDED'), concat('output/', variables('generationDir'), '/', pipeline().parameters.fileName), concat('rejected/', variables('generationDir'), '/validation.json'))"
+      },
+      "authentication": {
+        "type": "MSI",
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
+      }
+    }
+  }
+]

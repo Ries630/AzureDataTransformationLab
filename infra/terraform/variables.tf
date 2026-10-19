@@ -195,6 +195,18 @@ variable "schema_evolution_lab_enabled" {
   }
 }
 
+variable "idempotency_enabled" {
+  description = "Phase 6の処理状態Table・権限と、状態確認・版の固定・世代ごとの出力を行うPipelineを作成する。Data Factory基盤（data_factory_enabled）の有効化が前提。"
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.idempotency_enabled || var.data_factory_enabled
+    error_message = "idempotency_enabledはData Factory基盤（data_factory_enabled）を有効にしてから指定してください。"
+  }
+}
+
 variable "data_factory_name" {
   description = "Data Factory名。省略時はstorage_account_nameから導出する。"
   type        = string

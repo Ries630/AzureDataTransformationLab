@@ -194,11 +194,23 @@ resource "azurerm_data_factory_pipeline" "csv_ingestion" {
   data_factory_id = azurerm_data_factory.lab[0].id
   concurrency     = 1
 
-  parameters = {
+  # Phase 6では状態を確認してから子Pipelineで処理する。forceは完了済みの世代を手動で処理し直すときだけ"true"にする。
+  parameters = local.idempotency_enabled ? {
+    folderPath = ""
+    fileName   = ""
+    force      = "false"
+    } : {
     folderPath = ""
     fileName   = ""
   }
-  variables = {
+  variables = local.idempotency_enabled ? {
+    relativeDir  = ""
+    relativePath = ""
+    partitionKey = ""
+    inputEtag    = ""
+    stateStatus  = ""
+    stateAction  = ""
+    } : {
     relativeDir  = ""
     relativePath = ""
     # VALID経路でData Flowの読込・書込行数が一致したときだけokにし、PublishOutputで配置する。
@@ -206,13 +218,18 @@ resource "azurerm_data_factory_pipeline" "csv_ingestion" {
     rowCounts     = ""
   }
 
-  activities_json = templatefile("${path.module}/adf/csv_ingestion.activities.json", {
+  activities_json = local.idempotency_enabled ? templatefile("${path.module}/adf/csv_ingestion.idempotent.activities.json", {
+    storage_account_name = azurerm_storage_account.lab.name
+    state_table_name     = local.ingestion_state_table_name
+    child_pipeline_name  = azurerm_data_factory_pipeline.process_generation[0].name
+    }) : templatefile("${path.module}/adf/csv_ingestion.activities.json", {
     storage_account_name = azurerm_storage_account.lab.name
     ir_name              = local.data_factory_ir_name
   })
 
   # activities_json内の参照は名前だけなので、作成順序を明示する。
   depends_on = [
+    azurerm_data_factory_pipeline.process_generation,
     azurerm_data_factory_linked_service_azure_function.validator,
     azurerm_data_factory_custom_dataset.binary,
     azurerm_data_factory_dataset_delimited_text.csv,

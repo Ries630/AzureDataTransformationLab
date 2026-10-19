@@ -1,0 +1,398 @@
+[
+  {
+    "name": "NormalizeLandingFolder",
+    "type": "SetVariable",
+    "typeProperties": {
+      "variableName": "relativeDir",
+      "value": {
+        "value": "@if(equals(pipeline().parameters.folderPath, 'landing'), '', concat(substring(pipeline().parameters.folderPath, 8, sub(length(pipeline().parameters.folderPath), 8)), '/'))",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "BuildRelativePath",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "NormalizeLandingFolder",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "relativePath",
+      "value": {
+        "value": "@concat(variables('relativeDir'), pipeline().parameters.fileName)",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "ListLandingDir",
+    "type": "WebActivity",
+    "dependsOn": [
+      {
+        "activity": "BuildRelativePath",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 2,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "method": "GET",
+      "url": {
+        "value": "@concat('https://${storage_account_name}.dfs.core.windows.net/landing?resource=filesystem&recursive=false', if(equals(variables('relativeDir'), ''), '', concat('&directory=', encodeUriComponent(variables('relativeDir')))))",
+        "type": "Expression"
+      },
+      "headers": {
+        "x-ms-version": "2020-10-02"
+      },
+      "authentication": {
+        "type": "MSI",
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
+      }
+    }
+  },
+  {
+    "name": "PickInputEntry",
+    "type": "Filter",
+    "dependsOn": [
+      {
+        "activity": "ListLandingDir",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "items": {
+        "value": "@activity('ListLandingDir').output.paths",
+        "type": "Expression"
+      },
+      "condition": {
+        "value": "@equals(item().name, variables('relativePath'))",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "SetInputEtag",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "PickInputEntry",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "inputEtag",
+      "value": {
+        "value": "@activity('PickInputEntry').output.Value[0].etag",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "SetPartitionKey",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "SetInputEtag",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "partitionKey",
+      "value": {
+        "value": "@replace(replace(base64(variables('relativePath')), '/', '_'), '+', '-')",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "ReadState",
+    "type": "WebActivity",
+    "dependsOn": [
+      {
+        "activity": "SetPartitionKey",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "policy": {
+      "timeout": "0.00:02:00",
+      "retry": 2,
+      "retryIntervalInSeconds": 30,
+      "secureOutput": false,
+      "secureInput": false
+    },
+    "typeProperties": {
+      "method": "GET",
+      "url": {
+        "value": "@concat('https://${storage_account_name}.table.core.windows.net/${state_table_name}()?$filter=', encodeUriComponent(concat('PartitionKey eq ''', variables('partitionKey'), ''' and RowKey eq ''', variables('inputEtag'), '''')))",
+        "type": "Expression"
+      },
+      "headers": {
+        "x-ms-version": "2019-02-02",
+        "Accept": "application/json;odata=minimalmetadata"
+      },
+      "authentication": {
+        "type": "MSI",
+        "resource": "https://storage.azure.com",
+        "password": null,
+        "pfx": null
+      }
+    }
+  },
+  {
+    "name": "SetStateStatus",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "ReadState",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "stateStatus",
+      "value": {
+        "value": "@string(first(union(activity('ReadState').output.value, createArray(json('{\"status\":\"NONE\"}')))).status)",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "DecideStateAction",
+    "type": "SetVariable",
+    "dependsOn": [
+      {
+        "activity": "SetStateStatus",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "variableName": "stateAction",
+      "value": {
+        "value": "@if(equals(variables('stateStatus'), 'NONE'), 'claim', if(equals(variables('stateStatus'), 'RUNNING'), 'takeover', if(contains(createArray('SUCCEEDED', 'REJECTED'), variables('stateStatus')), if(equals(toLower(pipeline().parameters.force), 'true'), 'takeover', 'skip'), 'unexpected')))",
+        "type": "Expression"
+      }
+    }
+  },
+  {
+    "name": "ClaimOrSkip",
+    "type": "Switch",
+    "dependsOn": [
+      {
+        "activity": "DecideStateAction",
+        "dependencyConditions": [
+          "Succeeded"
+        ]
+      }
+    ],
+    "typeProperties": {
+      "on": {
+        "value": "@variables('stateAction')",
+        "type": "Expression"
+      },
+      "cases": [
+        {
+          "value": "claim",
+          "activities": [
+            {
+              "name": "InsertState",
+              "type": "WebActivity",
+              "policy": {
+                "timeout": "0.00:02:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "method": "POST",
+                "url": {
+                  "value": "@concat('https://${storage_account_name}.table.core.windows.net/${state_table_name}')",
+                  "type": "Expression"
+                },
+                "headers": {
+                  "x-ms-version": "2019-02-02",
+                  "Accept": "application/json;odata=minimalmetadata",
+                  "Content-Type": "application/json",
+                  "Prefer": "return-no-content"
+                },
+                "body": {
+                  "PartitionKey": "@variables('partitionKey')",
+                  "RowKey": "@variables('inputEtag')",
+                  "path": "@variables('relativePath')",
+                  "etag": "@variables('inputEtag')",
+                  "status": "RUNNING",
+                  "runId": "@pipeline().RunId",
+                  "attempts": 1
+                },
+                "authentication": {
+                  "type": "MSI",
+                  "resource": "https://storage.azure.com",
+                  "password": null,
+                  "pfx": null
+                }
+              }
+            },
+            {
+              "name": "ProcessNewGeneration",
+              "type": "ExecutePipeline",
+              "dependsOn": [
+                {
+                  "activity": "InsertState",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "secureInput": false
+              },
+              "typeProperties": {
+                "pipeline": {
+                  "referenceName": "${child_pipeline_name}",
+                  "type": "PipelineReference"
+                },
+                "waitOnCompletion": true,
+                "parameters": {
+                  "relativeDir": "@variables('relativeDir')",
+                  "relativePath": "@variables('relativePath')",
+                  "fileName": "@pipeline().parameters.fileName",
+                  "inputEtag": "@variables('inputEtag')",
+                  "partitionKey": "@variables('partitionKey')",
+                  "ownerRunId": "@pipeline().RunId"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "value": "takeover",
+          "activities": [
+            {
+              "name": "TakeOverState",
+              "type": "WebActivity",
+              "policy": {
+                "timeout": "0.00:02:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "typeProperties": {
+                "method": "PUT",
+                "url": {
+                  "value": "@concat('https://${storage_account_name}.table.core.windows.net/${state_table_name}(PartitionKey=''', variables('partitionKey'), ''',RowKey=''', variables('inputEtag'), ''')')",
+                  "type": "Expression"
+                },
+                "headers": {
+                  "x-ms-version": "2019-02-02",
+                  "Accept": "application/json;odata=minimalmetadata",
+                  "Content-Type": "application/json",
+                  "If-Match": "@activity('ReadState').output.value[0]['odata.etag']"
+                },
+                "body": {
+                  "PartitionKey": "@variables('partitionKey')",
+                  "RowKey": "@variables('inputEtag')",
+                  "path": "@variables('relativePath')",
+                  "etag": "@variables('inputEtag')",
+                  "status": "RUNNING",
+                  "runId": "@pipeline().RunId",
+                  "attempts": "@add(int(activity('ReadState').output.value[0].attempts), 1)"
+                },
+                "authentication": {
+                  "type": "MSI",
+                  "resource": "https://storage.azure.com",
+                  "password": null,
+                  "pfx": null
+                }
+              }
+            },
+            {
+              "name": "ProcessTakenOverGeneration",
+              "type": "ExecutePipeline",
+              "dependsOn": [
+                {
+                  "activity": "TakeOverState",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "policy": {
+                "secureInput": false
+              },
+              "typeProperties": {
+                "pipeline": {
+                  "referenceName": "${child_pipeline_name}",
+                  "type": "PipelineReference"
+                },
+                "waitOnCompletion": true,
+                "parameters": {
+                  "relativeDir": "@variables('relativeDir')",
+                  "relativePath": "@variables('relativePath')",
+                  "fileName": "@pipeline().parameters.fileName",
+                  "inputEtag": "@variables('inputEtag')",
+                  "partitionKey": "@variables('partitionKey')",
+                  "ownerRunId": "@pipeline().RunId"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "value": "skip",
+          "activities": [
+            {
+              "name": "SkipCompletedGeneration",
+              "type": "SetVariable",
+              "typeProperties": {
+                "variableName": "stateAction",
+                "value": {
+                  "value": "skipped",
+                  "type": "Expression"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "defaultActivities": [
+        {
+          "name": "UnexpectedState",
+          "type": "Fail",
+          "typeProperties": {
+            "message": {
+              "value": "@concat('処理状態が想定外です: ', variables('stateStatus'))",
+              "type": "Expression"
+            },
+            "errorCode": "UNEXPECTED_INGESTION_STATE"
+          }
+        }
+      ]
+    }
+  }
+]

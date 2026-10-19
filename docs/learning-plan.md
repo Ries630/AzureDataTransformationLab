@@ -697,7 +697,24 @@ az consumption budget show --subscription "${ARM_SUBSCRIPTION_ID:?}" \
 
 ### 1. 状態管理をplanで確認する
 
-`phase6.auto.tfvars`に`idempotency_enabled = true`を書いてplanを作る。追加はTableとRole Assignment、更新はPipelineだけで、削除がないことを確かめる。Pipelineの変更は、Activityの追加と、出力先のパスの変更である。
+Phase 2・3・5の入力ファイルを残したまま、Phase 6用の入力ファイルを追加する。
+
+```bash
+(
+set -eu
+umask 077
+set -o noclobber
+printf '%s\n' 'idempotency_enabled = true' > infra/terraform/phase6.auto.tfvars
+terraform -chdir=infra/terraform plan -input=false -out=phase6.tfplan
+terraform -chdir=infra/terraform show -no-color phase6.tfplan
+)
+```
+
+planでは次を照合する。
+
+- 追加：Table`ingestionstate`、ADFのIdentityへの`Storage Table Data Contributor`（scopeはTableだけ）、子Pipeline`pl-csv-process-generation`の3件
+- 更新：`pl-csv-ingestion`の1件。パラメーター`force`の追加と、Activityが状態の確認と子Pipelineの呼び出しに変わること
+- 削除：0件
 
 ### 2. 承認されたplanを適用する
 
@@ -710,7 +727,7 @@ Data Flowのクラスターが起動する実行は、表の3回に抑える。
 | 確認 | 操作 | 期待する結果 |
 |---|---|---|
 | 重複 | `orders_v1.csv`を`landing`へ置き、処理中に「今すぐトリガー」で同じ`folderPath`・`fileName`を2回実行する | 後の2回は順番待ちの後、何も書かずに正常終了する。`output`は1世代だけで、状態は`SUCCEEDED`、`attempts`は1 |
-| 失敗後の再実行 | 別名で置いた`orders_v1.csv`の実行を、Data Flowの前にADF Studioでキャンセルし、同じ入力で再実行する | 状態は`RUNNING`のまま残り、再実行が引き継いで`SUCCEEDED`になる。`attempts`は2 |
+| 失敗後の再実行 | 別名で置いた`orders_v1.csv`の実行を、Data Flowの前にADF Studioで子Pipelineごと（再帰的に）キャンセルし、同じ入力で再実行する | 状態は`RUNNING`のまま残り、再実行が引き継いで`SUCCEEDED`になる。`attempts`は2 |
 | 完了後の再実行 | 重複で使った入力を、`force`なしと`force = true`で1回ずつ再実行する | `force`なしは何もしない。`force = true`は同じ世代のパスを同じ内容で上書きし、`attempts`が増える |
 | 版の変更 | 同じパスに`orders_invalid.csv`の内容を置き直す | 新しい世代として`REJECTED`になる。前の世代の`output`と状態は残る |
 
