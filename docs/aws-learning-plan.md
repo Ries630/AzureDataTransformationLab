@@ -8,7 +8,7 @@
 | [AWS 1](#aws-1-共通部分とaws固有の契約を整理する) | 共通契約と比較基準 | [#32](https://github.com/Ries630/AzureDataTransformationLab/issues/32) | 完了 |
 | [AWS 2](#aws-2-検証と変換のコードiacを作る) | コードとIaC | [#33](https://github.com/Ries630/AzureDataTransformationLab/issues/33) | 完了 |
 | [AWS 3](#aws-3-持ち込み用bundleを作る) | 持ち込みZIP | [#34](https://github.com/Ries630/AzureDataTransformationLab/issues/34) | 完了 |
-| [AWS 4](#aws-4-会社へ持ち込み構築を完了する) | 会社での構築と受け入れ確認 | [#35](https://github.com/Ries630/AzureDataTransformationLab/issues/35) | 完了（[実施記録](archive/AWS4-受け入れ記録.md)。DLQ障害試験と管理者復旧は未検証） |
+| [AWS 4](#aws-4-会社へ持ち込み構築を完了する) | 会社での構築と受け入れ確認 | [#35](https://github.com/Ries630/AzureDataTransformationLab/issues/35) | 完了（[実施記録](archive/AWS4-受け入れ記録.md)。DLQ障害試験、管理者復旧、同一keyの更新、行欠落時の非公開は未検証） |
 | [AWS 5](#aws-5-azureと比較して学ぶ) | Azureとの比較と学習 | [#42](https://github.com/Ries630/AzureDataTransformationLab/issues/42) | 未着手 |
 
 ## 目的と完成条件
