@@ -50,7 +50,7 @@ EventBridgeが実行開始を配信できない → SQS DLQ → CloudWatch Alarm
 | 検証コードの正 | `functions/validator/validation.py`と既存の純粋検証テスト。Azure入口・import・配置を変更しない |
 | Lambdaへの同梱 | ZIP生成時に正の`validation.py`をZIP直下へコピーする。AWS配下に編集用の複製を置かず、生成時にSHA-256一致を検査する |
 | Lambda | Python `python3.14`、`arm64`。会社制約がある場合はruntime/architectureを指定して再生成・再検証する |
-| Lambda依存 | AWS入口のPEP 723と隣接lockを正とし、Boto3を含めて固定する。対象Linux・Python・CPU向けにZIPを生成する |
+| Lambda依存 | `functions/aws/pyproject.toml`とworkspaceの`uv.lock`を正とし、Boto3を含めて固定する。対象Linux・Python・CPU向けにZIPを生成する |
 | Glue | Glue 5.1（Spark 3.5.6 / Python 3.11）、G.1Xを2 worker、同時job数1。Lambda用の依存・ZIPを流用しない |
 | IaC | AWS root・stateはAzureから分離。会社でbackendを指定し、ローカル検証で会社stateへ接続しない |
 

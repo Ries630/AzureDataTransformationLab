@@ -20,7 +20,7 @@
 | [`workflows/aws/pipeline.asl.json`](../workflows/aws/pipeline.asl.json) | Standardの実行順序、待機、Retry、Glueの`.sync`と失敗処理 |
 | [`glue/transform_orders.py`](../glue/transform_orders.py) | Sparkによる変換、未知列の保持、行数・cast欠落の検査、stagingへの保存 |
 | [`infra/aws/pipeline`](../infra/aws/pipeline/README.md) | AWS専用root。コード配置、IAM、イベント、監視を管理 |
-| [`scripts/aws/package.py`](../scripts/aws/package.py) | PEP 723のlockからLambda ZIPを生成し、展開後の実importを確認 |
+| [`scripts/aws/package.py`](../scripts/aws/package.py) | workspaceの`uv.lock`からLambda ZIPを生成し、展開後の実importを確認 |
 
 ### Lambda ZIPの生成
 
@@ -53,7 +53,7 @@ docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE
 AWS APIをモックした検査と、Sparkによる変換の検査は次で実行する。Spark検査にはJava 17が必要である。
 
 ```bash
-uv run --locked scripts/aws/test_pipeline.py
+uv run --locked --package aws-lambda scripts/aws/test_pipeline.py
 uv run --locked scripts/aws/test_spark.py
 ```
 

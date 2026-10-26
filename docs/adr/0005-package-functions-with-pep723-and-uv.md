@@ -1,6 +1,6 @@
 # ADR-0005: PEP 723の依存関係をuvでAzure Functions用にパッケージする
 
-- ステータス: 承認済み
+- ステータス: 承認済み（依存関係の正は[ADR-0014](0014-manage-function-dependencies-with-uv-workspace.md)で置換を提案中）
 - 検証状況: 固定Linux x86_64コンテナーで2回のクリーンビルド、ネイティブ依存のimport、manifestのlock SHA256と実配置依存の一致を確認済み。[PR #26のCI](https://github.com/Ries630/AzureDataTransformationLab/actions/runs/34083499804)でもUbuntu 24.04上のテストとLinuxパッケージ生成が成功。Azureへの発行とvalidateの登録に加え、2026-09-08にcurlとNodeからキー付きHTTPの4ケースを実行し、ローカルとの結果一致を確認。HTTP障害の比較結果は[ADR-0007](0007-set-flex-max-instance-count.md#検証結果2026-09-08)を参照
 - 日付: 2026-09-07
 - 関連: [Issue #16](https://github.com/Ries630/AzureDataTransformationLab/issues/16)
@@ -50,3 +50,7 @@ Linux x86_64の生成環境とPythonヘルパーを維持する必要がある�
 - [uvでスクリプトを実行する](https://docs.astral.sh/uv/guides/scripts/)
 - [uv CLI reference](https://docs.astral.sh/uv/reference/cli/)
 - [Deploy your Python apps to Azure Functions](https://learn.microsoft.com/en-us/azure/azure-functions/python-build-options)
+
+## 置換
+
+2026-10-26、Lambdaとテスト用スクリプトのロックが増え、共通の依存の版がずれる負担が生じたため、依存関係の正をPEP 723と隣接ロックからuv workspaceの`pyproject.toml`と`uv.lock`へ移す提案をした。Linux x86_64での生成、ハッシュ検証、wheel限定、manifest、`--no-build`での発行はこのADRのまま維持する。詳細は[ADR-0014](0014-manage-function-dependencies-with-uv-workspace.md)を参照する。

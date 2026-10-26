@@ -182,7 +182,7 @@ Step Functionsは、Glue Jobの完了を待てるStandardを候補とする。[G
 - AWS用のrootは[`infra/aws/pipeline/`](../infra/aws/pipeline/README.md)に置き、Azure用のroot・stateから分離する。配置物の生成と運用は[実装手順](aws-implementation.md)にある。
 - 実行対象のアカウントとリージョンを検査し、会社の認証方式とstateの保存先を使う。
 - Lambda、Glue、ワークフローの定義はGitで管理し、配置用コードとインフラの更新手順を辿れるようにする。
-- Pythonの依存はPEP 723と隣接するlockを正とし、Lambdaの対象環境に合わせてZIPを生成する。[Lambdaの配置仕様](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html)に合わせて、Boto3を含む依存を固定して同梱する。
+- Lambdaの依存は`functions/aws/pyproject.toml`とworkspaceの`uv.lock`を正とし（[ADR-0014](adr/0014-manage-function-dependencies-with-uv-workspace.md)）、Lambdaの対象環境に合わせてZIPを生成する。[Lambdaの配置仕様](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html)に合わせて、Boto3を含む依存を固定して同梱する。
 - Glue用コードの依存と配置方法はLambdaと分け、選んだGlueランタイムの条件を記録する。
 - Providerはlockで固定する。会社でProviderを取得できない場合は、許可された配布方法で対象のOS・CPU用のmirrorを用意する。
 
