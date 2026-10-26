@@ -10,3 +10,4 @@ runs:
     - shell: bash
       run: |
         echo "RUFF_VERSION=0.17.2" >> "$GITHUB_ENV"
+        echo "TY_VERSION=0.0.92" >> "$GITHUB_ENV"

@@ -37,5 +37,12 @@ jobs:
       - run: uv run scripts/validator/test_pure.py
       - run: uvx --from "ruff==$RUFF_VERSION" ruff check functions/validator tests/validator scripts/validator
       - run: uvx --from "ruff==$RUFF_VERSION" ruff format --check functions/validator tests/validator scripts/validator
+      - name: Type check with the locked dependencies
+        run: |
+          uv sync --locked --script functions/validator/function_app.py
+          uvx --from "ty==$TY_VERSION" ty check \
+            --python "$(uv python find --script functions/validator/function_app.py)" \
+            --extra-search-path functions/validator \
+            functions/validator tests/validator scripts/validator
       - name: Build Linux deployment directory
         run: uv run scripts/validator/package.py "$RUNNER_TEMP/validator-package"
