@@ -184,7 +184,7 @@ class CheckerBoundaryTests(unittest.TestCase):
                 (root / "functions/aws/handler.py").write_text("# handler")
                 validation = root / "functions/validator/validation.py"
                 validation.write_text("# validation")
-                lock = root / "functions/aws/handler.py.lock"
+                lock = root / "uv.lock"
                 lock.write_text("package = []")
                 runtime = {
                     "python": "3.14",

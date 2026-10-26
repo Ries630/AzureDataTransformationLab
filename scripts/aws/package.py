@@ -2,7 +2,7 @@
 # requires-python = ">=3.14,<3.15"
 # dependencies = []
 # ///
-"""LambdaのPEP 723 lockから対象Linux用ZIPを生成し、実importを検証する。"""
+"""workspaceのuv.lockから対象Linux用ZIPを生成し、実importを検証する。"""
 
 import argparse
 import hashlib
@@ -42,12 +42,15 @@ def build(destination: Path, architecture: str, python_version: str) -> None:
                 "uv",
                 "export",
                 "--locked",
-                "--script",
-                str(source / "handler.py"),
+                "--package",
+                "aws-lambda",
+                "--no-dev",
+                "--no-emit-workspace",
                 "--format",
                 "requirements.txt",
                 "--no-header",
-            ]
+            ],
+            cwd=root,
         )
         dependency_file = Path(temporary) / "dependencies.txt"
         dependency_file.write_bytes(dependencies)
@@ -73,7 +76,7 @@ def build(destination: Path, architecture: str, python_version: str) -> None:
             "architecture": architecture,
             "platform": f"linux-{architecture}",
             "validation_sha256": validation_sha,
-            "lock_sha256": hashlib.sha256((source / "handler.py.lock").read_bytes()).hexdigest(),
+            "lock_sha256": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
             "dependencies": sorted(
                 (
                     {"name": item.metadata["Name"], "version": item.version}

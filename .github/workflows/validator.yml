@@ -10,6 +10,8 @@ on:
       - 'ruff.toml'
       - '.github/workflows/validator.yml'
       - '.github/actions/setup-python-tools/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
   push:
     branches: [main]
     paths:
@@ -20,6 +22,8 @@ on:
       - 'ruff.toml'
       - '.github/workflows/validator.yml'
       - '.github/actions/setup-python-tools/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
 
 permissions:
   contents: read
@@ -33,15 +37,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-python-tools
-      - run: uv run --locked functions/validator/function_app.py test
+      - run: uv run --locked --package validator functions/validator/function_app.py test
       - run: uv run scripts/validator/test_pure.py
-      - run: uvx --from "ruff==$RUFF_VERSION" ruff check functions/validator tests/validator scripts/validator
-      - run: uvx --from "ruff==$RUFF_VERSION" ruff format --check functions/validator tests/validator scripts/validator
+      - run: uv run --locked --only-group dev ruff check functions/validator tests/validator scripts/validator
+      - run: uv run --locked --only-group dev ruff format --check functions/validator tests/validator scripts/validator
       - name: Type check with the locked dependencies
         run: |
-          uv sync --locked --script functions/validator/function_app.py
-          uvx --from "ty==$TY_VERSION" ty check \
-            --python "$(uv python find --script functions/validator/function_app.py)" \
+          uv run --locked --package validator --group dev ty check \
             --extra-search-path functions/validator \
             functions/validator tests/validator scripts/validator
       - name: Build Linux deployment directory

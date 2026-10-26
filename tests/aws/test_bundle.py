@@ -50,6 +50,23 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class LockTests(unittest.TestCase):
+    """workspaceのlockからLambdaに配置される依存だけを取り出す。"""
+
+    def test_only_lambda_closure_is_expected(self):
+        """Azure側の依存とメンバー自身を除き、推移的な依存を含める。"""
+        lock = {
+            "package": [
+                {"name": "aws-lambda", "version": "0.1.0", "dependencies": [{"name": "boto3"}]},
+                {"name": "boto3", "version": "1.0", "dependencies": [{"name": "botocore"}]},
+                {"name": "botocore", "version": "2.0"},
+                {"name": "validator", "version": "0.1.0", "dependencies": [{"name": "azure"}]},
+                {"name": "azure", "version": "3.0"},
+            ]
+        }
+        self.assertEqual(bundle.lambda_dependencies(lock), {("boto3", "1.0"), ("botocore", "2.0")})
+
+
 class BundleTests(unittest.TestCase):
     """配布物と検査報告を同じcommitの実体へ結び付ける。"""
 
@@ -65,7 +82,10 @@ class BundleTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             if not path.exists():
                 path.write_text("# 公開fixture\n")
-        (self.repo / "functions/aws/handler.py.lock").write_text("version = 1\npackage = []\n")
+        # 依存のないLambdaメンバーだけを持つworkspaceのlock。
+        (self.repo / "uv.lock").write_text(
+            'version = 1\n\n[[package]]\nname = "aws-lambda"\nversion = "0.1.0"\n'
+        )
         self.git("add", ".")
         self.git("commit", "-qm", "complete fixture")
         self.commit = self.git("rev-parse", "HEAD").strip()
@@ -76,7 +96,7 @@ class BundleTests(unittest.TestCase):
             "platform": "linux-arm64",
             "dependencies": [],
             "validation_sha256": bundle.sha256(source["functions/validator/validation.py"]),
-            "lock_sha256": bundle.sha256(source["functions/aws/handler.py.lock"]),
+            "lock_sha256": bundle.sha256(source["uv.lock"]),
         }
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w") as archive:

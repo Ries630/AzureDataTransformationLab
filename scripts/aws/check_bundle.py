@@ -193,7 +193,7 @@ def extract_package(root: Path, target: Path, manifest: dict) -> None:
         if runtime != lambda_runtime(manifest):
             raise CheckFailure("PACKAGE_RUNTIME_MISMATCH")
         validation = safe_path(root, "functions/validator/validation.py")
-        lock = safe_path(root, "functions/aws/handler.py.lock")
+        lock = safe_path(root, "uv.lock")
         if (
             runtime.get("validation_sha256") != sha256(validation)
             or hashlib.sha256(archive.read("validation.py")).hexdigest() != sha256(validation)

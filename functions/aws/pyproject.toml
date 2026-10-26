@@ -1,0 +1,10 @@
+[project]
+name = "aws-lambda"
+version = "0.1.0"
+description = "CSV検証からGlue起動までを担うAWS Lambda"
+requires-python = ">=3.14,<3.15"
+dependencies = ["boto3==1.42.88"]
+
+# 配置はscripts/aws/package.pyが行うため、パッケージとしてはビルドしない。
+[tool.uv]
+package = false

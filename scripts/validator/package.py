@@ -33,7 +33,15 @@ def build_in_docker(destination: Path) -> None:
             "--platform",
             "linux/amd64",
             "--mount",
+            f"type=bind,src={root / 'pyproject.toml'},dst=/src/pyproject.toml,readonly",
+            "--mount",
+            f"type=bind,src={root / 'uv.lock'},dst=/src/uv.lock,readonly",
+            "--mount",
             f"type=bind,src={root / 'functions/validator'},dst=/src/functions/validator,readonly",
+            # workspaceのlock検査には全メンバーの定義が必要なため、AWS側はpyprojectだけ渡す。
+            "--mount",
+            f"type=bind,src={root / 'functions/aws/pyproject.toml'},"
+            "dst=/src/functions/aws/pyproject.toml,readonly",
             "--mount",
             f"type=bind,src={root / 'scripts/validator'},dst=/src/scripts/validator,readonly",
             "--mount",
@@ -54,22 +62,26 @@ def build(destination: Path) -> None:
     """新規ディレクトリにコードと検証済みのLinux依存を配置する。"""
     if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"}:
         raise RuntimeError("Azure向けの構築はLinux x86_64環境で実行してください。")
-    source = Path(__file__).resolve().parents[2] / "functions/validator"
+    root = Path(__file__).resolve().parents[2]
+    source = root / "functions/validator"
     destination.mkdir(parents=True, exist_ok=False)
     for filename in ["function_app.py", "validation.py", "storage.py", "host.json", ".funcignore"]:
         shutil.copyfile(source / filename, destination / filename)
-    # 依存の正はアプリのPEP 723とlock。配置用リストはこの処理内だけで使う。
+    # 依存の正はvalidatorのpyprojectとworkspaceのlock。配置用リストはこの処理内だけで使う。
     requirements = subprocess.check_output(
         [
             "uv",
             "export",
             "--locked",
-            "--script",
-            str(source / "function_app.py"),
+            "--package",
+            "validator",
+            "--no-dev",
+            "--no-emit-workspace",
             "--format",
             "requirements.txt",
             "--no-header",
-        ]
+        ],
+        cwd=root,
     )
     target = destination / ".python_packages/lib/site-packages"
     with tempfile.TemporaryDirectory(prefix="adtl-dependencies-") as temporary:
@@ -119,7 +131,7 @@ def build(destination: Path) -> None:
     manifest = {
         "python": "3.14",
         "platform": "linux-x86_64",
-        "lock_sha256": hashlib.sha256((source / "function_app.py.lock").read_bytes()).hexdigest(),
+        "lock_sha256": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
         "dependencies": sorted(
             (
                 {"name": item.metadata["Name"], "version": item.version}

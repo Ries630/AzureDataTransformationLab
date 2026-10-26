@@ -1,0 +1,14 @@
+[project]
+name = "validator"
+version = "0.1.0"
+description = "CSVを検証するAzure Functionsアプリ"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "azure-functions>=1.24,<2",
+  "azure-identity>=1.25,<2",
+  "azure-storage-blob>=12.27,<13",
+]
+
+# 配置はscripts/validator/package.pyが行うため、パッケージとしてはビルドしない。
+[tool.uv]
+package = false
