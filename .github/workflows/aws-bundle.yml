@@ -28,9 +28,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.11.7'
+      - uses: ./.github/actions/setup-python-tools
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.16.0
@@ -51,8 +49,8 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/bundle-pwsh" >> "$GITHUB_PATH"
       - name: Check bundle tooling
         run: |
-          uvx --from ruff==0.15.2 ruff check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
-          uvx --from ruff==0.15.2 ruff format --check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
+          uvx --from "ruff==$RUFF_VERSION" ruff check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
+          uvx --from "ruff==$RUFF_VERSION" ruff format --check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
           uv run scripts/aws/test_bundle.py
           uv run scripts/aws/test_verify_bundle.py
           uv run scripts/aws/test_check_bundle.py

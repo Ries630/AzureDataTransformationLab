@@ -1,0 +1,13 @@
+name: Set up Python tools
+description: uvと検査ツールの版をこのファイルだけで固定する。
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        version: '0.13.5'
+    # 検査ツールの版。各workflowは環境変数で参照する。
+    - shell: bash
+      run: |
+        echo "RUFF_VERSION=0.17.2" >> "$GITHUB_ENV"
+        echo "TY_VERSION=0.0.92" >> "$GITHUB_ENV"

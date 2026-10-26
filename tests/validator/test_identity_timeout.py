@@ -16,6 +16,8 @@ class HangingIdentityHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         """認証クライアントのタイムアウトを発生させるまで接続を保持する。"""
         server = self.server
+        # 共有状態はHangingIdentityServerだけが持つため、型を絞ってから参照する。
+        assert isinstance(server, HangingIdentityServer)
         server.request_started()
         server.request_seen.set()
         try:

@@ -15,9 +15,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.11.7'
+      - uses: ./.github/actions/setup-python-tools
       - name: Verify Linux arm64 Lambda package imports
         run: uv run scripts/aws/package.py "$RUNNER_TEMP/aws-lambda.zip"
   unit:
@@ -26,13 +24,11 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.11.7'
-      - run: uvx --from ruff==0.15.2 ruff check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
-      - run: uvx --from ruff==0.15.2 ruff format --check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
-      - run: uvx --from ruff==0.15.2 ruff check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
-      - run: uvx --from ruff==0.15.2 ruff format --check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
+      - uses: ./.github/actions/setup-python-tools
+      - run: uvx --from "ruff==$RUFF_VERSION" ruff check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
+      - run: uvx --from "ruff==$RUFF_VERSION" ruff format --check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
+      - run: uvx --from "ruff==$RUFF_VERSION" ruff check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
+      - run: uvx --from "ruff==$RUFF_VERSION" ruff format --check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
       - name: Verify AWS processing contracts with SDK mocks
         run: uv run --locked scripts/aws/test_pipeline.py
       - name: Verify the shared CSV validation contract
@@ -44,9 +40,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: '0.11.7'
+      - uses: ./.github/actions/setup-python-tools
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
