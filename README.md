@@ -13,7 +13,7 @@ Azureサービスの習得自体ではなく、イベント駆動、オーケス
 - [Phase 1の実行手順](docs/learning-plan.md#phase-1-storage)：Terraformの初期化からplan・適用・CSV確認まで
 - [後片付けと再構築](docs/lab-teardown.md)：学習環境の削除、中止時の復旧、削除後の再構築
 - [Phase 1の解説](docs/tutorials/phase-1-storage.md)：CSVの保存先からTerraformのコード、権限、実行結果を理解する
-- [Phase 2の解説](docs/tutorials/phase-2-validation.md)：CSV検証、HTTP契約、Managed Identity、PEP 723パッケージを理解する
+- [Phase 2の解説](docs/tutorials/phase-2-validation.md)：CSV検証、HTTP契約、Managed Identity、依存関係のパッケージ化を理解する
 - [Phase 3の解説](docs/tutorials/phase-3-data-factory.md)：Data Factoryの用語、CSVがたどる処理の段階、定義ファイルとの対応を理解する
 - [Phase 4の解説](docs/tutorials/phase-4-schema-evolution.md)：列や型が変わったCSVを、どの層で受け入れ、どの層で拒否するかを比較する
 - [Terraform planのPRレビュー](docs/terraform-plan-review.md)：OIDCの接続設定とPRコメントでのplan確認

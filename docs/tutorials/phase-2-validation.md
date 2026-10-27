@@ -124,29 +124,29 @@ Blobを読めないときは、CSVの中身を疑う前に、Identity、対象�
 
 ## 6. 依存関係を固定し、Azure用のパッケージを作る
 
-`function_app.py`の先頭には、PEP 723の形式で依存関係が書かれています。
+Functionの依存関係は、`functions/validator/pyproject.toml`に書かれています。
 
-```python
-# /// script
-# requires-python = ">=3.14,<3.15"
-# dependencies = [
-#   "azure-functions>=1.24,<2",
-#   "azure-identity>=1.25,<2",
-#   "azure-storage-blob>=12.27,<13",
-# ]
-# ///
+```toml
+[project]
+name = "validator"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "azure-functions>=1.24,<2",
+  "azure-identity>=1.25,<2",
+  "azure-storage-blob>=12.27,<13",
+]
 ```
 
-uvはこのメタデータを読んで依存関係を解決し、隣に置いたロックファイル（`function_app.py.lock`）にバージョンとハッシュを固定します。`uv run --locked`で実行すると、ロックと異なる依存関係では実行されません。
+このディレクトリは、リポジトリのルートの`pyproject.toml`が定義するuv workspaceのメンバーです。AWS Lambdaの`functions/aws`もメンバーで、uvは両方の依存関係をまとめて解決し、ルートの`uv.lock`にバージョンとハッシュを固定します。`uv run --locked --package validator`で実行すると、ロックと異なる依存関係では実行されません。
 
 ```bash
-uv lock --script functions/validator/function_app.py
-uv run --locked functions/validator/function_app.py test
+uv lock
+uv run --locked --package validator functions/validator/function_app.py test
 ```
 
-ただし、Azure FunctionsのホストはPEP 723のメタデータを読みません。Azure上のFunctionが読み込むのは、発行したパッケージに含まれるコードと、`.python_packages/lib/site-packages`に置かれたライブラリだけです。そこで、ロックどおりのライブラリをAzureと同じLinux x86_64・Python 3.14の環境でインストールし、パッケージに含めて発行します。Macでは固定したLinuxコンテナーの中で生成し、CIも同じLinux用の生成処理を使います。手順は[学習計画の依存関係の生成](../learning-plan.md#4-azure-functions用の依存関係を生成する)にあります。
+ただし、Azure Functionsのホストは`pyproject.toml`を読みません。Azure上のFunctionが読み込むのは、発行したパッケージに含まれるコードと、`.python_packages/lib/site-packages`に置かれたライブラリだけです。そこで、ロックどおりのライブラリをAzureと同じLinux x86_64・Python 3.14の環境でインストールし、パッケージに含めて発行します。Macでは固定したLinuxコンテナーの中で生成し、CIも同じLinux用の生成処理を使います。手順は[学習計画の依存関係の生成](../learning-plan.md#4-azure-functions用の依存関係を生成する)にあります。
 
-つまり、依存関係を解決する場所（uvとロック）と、解決済みのライブラリを実行する場所（Azure上のホスト）が分かれています。この方式を選んだ理由と、Azure上で未検証の事項は[ADR-0005](../adr/0005-package-functions-with-pep723-and-uv.md)にあります。
+つまり、依存関係を解決する場所（uvとロック）と、解決済みのライブラリを実行する場所（Azure上のホスト）が分かれています。生成方式を選んだ理由は[ADR-0005](../adr/0005-package-functions-with-pep723-and-uv.md)、workspaceへ移した理由は[ADR-0014](../adr/0014-manage-function-dependencies-with-uv-workspace.md)にあります。
 
 ## 7. 手を動かして確かめる
 
@@ -155,10 +155,10 @@ uv run --locked functions/validator/function_app.py test
 リポジトリのルートで、テストと2つのサンプルの判定を実行します。
 
 ```bash
-uv run --locked functions/validator/function_app.py test
+uv run --locked --package validator functions/validator/function_app.py test
 uv run scripts/validator/test_pure.py
-uv run --locked functions/validator/function_app.py sample samples/valid/orders_v1.csv
-uv run --locked functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
+uv run --locked --package validator functions/validator/function_app.py sample samples/valid/orders_v1.csv
+uv run --locked --package validator functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
 ```
 
 `test_pure.py`は、Azure SDKをインストールせずに`validate_csv`を呼び出します。検証処理がAzureに依存していないことを、ここで確かめられます。
@@ -168,7 +168,7 @@ uv run --locked functions/validator/function_app.py sample samples/invalid/order
 ```bash
 mkdir -p .artifacts
 cp -n samples/invalid/orders_invalid.csv .artifacts/orders-practice.csv
-uv run --locked functions/validator/function_app.py sample .artifacts/orders-practice.csv
+uv run --locked --package validator functions/validator/function_app.py sample .artifacts/orders-practice.csv
 ```
 
 最初は5件のエラーが出ます。`amount`の負の数、`customer_id`の空欄、`currency`の値、`ordered_at`の形式を順に直し、直すたびに`sample`を実行して、どのエラーが消え、どのエラーが残るかを記録します。
@@ -197,6 +197,6 @@ Azure上に基盤を作る前に、[学習計画のplan手順](../learning-plan.
 2. `validation.py`をAzure SDKから分離すると、何ができるようになるか。（1節、2節）
 3. リクエストにETagを含めるのはなぜか。ETagが一致しないとき、Functionは何を返すか。（4節）
 4. ローカルで`AZURE_CLIENT_ID`を設定しないのはなぜか。（5節）
-5. PEP 723のロックがあるのに、Linuxでパッケージを生成して発行するのはなぜか。（6節）
+5. `uv.lock`があるのに、Linuxでパッケージを生成して発行するのはなぜか。（6節）
 
 答えを書いたら、該当する節と[アーキテクチャ](../architecture.md#azure-functionsの責務)、ADRを読み直し、実際のコードの境界と一致しているかを確かめます。

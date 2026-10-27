@@ -1,11 +1,3 @@
-# /// script
-# requires-python = ">=3.14,<3.15"
-# dependencies = [
-#   "azure-functions>=1.24,<2",
-#   "azure-identity>=1.25,<2",
-#   "azure-storage-blob>=12.27,<13",
-# ]
-# ///
 """CSV検証のHTTP入口と、同じ依存環境で実行する学習用コマンド。"""
 
 import argparse
@@ -118,7 +110,7 @@ def validate(request: func.HttpRequest) -> func.HttpResponse:
 
 
 def main() -> None:
-    """PEP 723の固定依存を使い、検証・サンプル実行・ローカルホストを起動する。"""
+    """workspaceの固定依存を使い、検証・サンプル実行・ローカルホストを起動する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["test", "sample", "serve"])
     parser.add_argument("path", nargs="?")

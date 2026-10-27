@@ -20,7 +20,7 @@
 | [`workflows/aws/pipeline.asl.json`](../workflows/aws/pipeline.asl.json) | Standardの実行順序、待機、Retry、Glueの`.sync`と失敗処理 |
 | [`glue/transform_orders.py`](../glue/transform_orders.py) | Sparkによる変換、未知列の保持、行数・cast欠落の検査、stagingへの保存 |
 | [`infra/aws/pipeline`](../infra/aws/pipeline/README.md) | AWS専用root。コード配置、IAM、イベント、監視を管理 |
-| [`scripts/aws/package.py`](../scripts/aws/package.py) | PEP 723のlockからLambda ZIPを生成し、展開後の実importを確認 |
+| [`scripts/aws/package.py`](../scripts/aws/package.py) | workspaceの`uv.lock`からLambda ZIPを生成し、展開後の実importを確認 |
 
 ### Lambda ZIPの生成
 
@@ -45,7 +45,7 @@ uv run scripts/aws/package.py /tmp/adtl-lambda.zip --architecture arm64 --python
 Dockerを使う場合は、リポジトリを読み取り専用で渡し、出力用のディレクトリだけを書き込み可能にする。次の例は、Python 3.14 / Linux arm64でZIPの生成と実際のimportを確認したイメージに固定している。`REPOSITORY_ABSOLUTE_PATH`と`OUTPUT_ABSOLUTE_DIRECTORY`を実際の絶対パスに置き換え、出力ディレクトリを先に作っておく。
 
 ```bash
-docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE_PATH,dst=/src,readonly --mount type=bind,src=OUTPUT_ABSOLUTE_DIRECTORY,dst=/out -w /src ghcr.io/astral-sh/uv@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1 uv run scripts/aws/package.py /out/lambda.zip
+docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE_PATH,dst=/src,readonly --mount type=bind,src=OUTPUT_ABSOLUTE_DIRECTORY,dst=/out -w /src ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff uv run scripts/aws/package.py /out/lambda.zip
 ```
 
 ### ローカルでの検査
@@ -53,7 +53,7 @@ docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE
 AWS APIをモックした検査と、Sparkによる変換の検査は次で実行する。Spark検査にはJava 17が必要である。
 
 ```bash
-uv run --locked scripts/aws/test_pipeline.py
+uv run --locked --package aws-lambda scripts/aws/test_pipeline.py
 uv run --locked scripts/aws/test_spark.py
 ```
 

@@ -166,6 +166,22 @@ def lambda_runtime(manifest: dict) -> dict:
     return runtime
 
 
+def lambda_dependencies(lock: dict) -> set[tuple[str, str]]:
+    """workspaceのlockから、Lambdaメンバーが推移的に依存するパッケージと版を集める。"""
+    # 配布物だけで検査を完結させるため、bundle.pyと同じ処理をここにも持つ。
+    packages = {item["name"]: item for item in lock["package"]}
+    pending = ["aws-lambda"]
+    seen = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        pending.extend(item["name"] for item in packages[name].get("dependencies", []))
+    # メンバー自身はビルドしないため、配置される依存には含めない。
+    return {(name, packages[name]["version"]) for name in seen - {"aws-lambda"}}
+
+
 def extract_package(root: Path, target: Path, manifest: dict) -> None:
     """ZIP内の脱出・リンク・重複を拒否し、対象runtimeと原本hashを照合する。"""
     package = safe_path(root, "dist/aws/lambda.zip")
@@ -193,7 +209,7 @@ def extract_package(root: Path, target: Path, manifest: dict) -> None:
         if runtime != lambda_runtime(manifest):
             raise CheckFailure("PACKAGE_RUNTIME_MISMATCH")
         validation = safe_path(root, "functions/validator/validation.py")
-        lock = safe_path(root, "functions/aws/handler.py.lock")
+        lock = safe_path(root, "uv.lock")
         if (
             runtime.get("validation_sha256") != sha256(validation)
             or hashlib.sha256(archive.read("validation.py")).hexdigest() != sha256(validation)
@@ -214,8 +230,8 @@ def extract_package(root: Path, target: Path, manifest: dict) -> None:
         for item in runtime["dependencies"]
     }
     locked = {
-        re.sub(r"[-_.]+", "-", item["name"]).lower(): item["version"]
-        for item in tomllib.loads(lock.read_text(encoding="utf-8"))["package"]
+        re.sub(r"[-_.]+", "-", name).lower(): version
+        for name, version in lambda_dependencies(tomllib.loads(lock.read_text(encoding="utf-8")))
     }
     if installed != declared or installed != locked:
         raise CheckFailure("PACKAGE_DEPENDENCY_MISMATCH")

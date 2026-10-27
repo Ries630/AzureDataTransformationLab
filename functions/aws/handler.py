@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.14,<3.15"
-# dependencies = ["boto3==1.42.88"]
-# ///
 """AWSサービス境界と世代所有権を接続するLambda入口。"""
 
 from __future__ import annotations

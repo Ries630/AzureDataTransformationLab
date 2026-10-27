@@ -286,10 +286,10 @@ PythonのFunctionでCSVを検証する。検証ロジックはAzure Functions固
 リポジトリのルートで、テストとサンプルの検証を実行する。
 
 ```bash
-uv run --locked functions/validator/function_app.py test
+uv run --locked --package validator functions/validator/function_app.py test
 uv run scripts/validator/test_pure.py
-uv run --locked functions/validator/function_app.py sample samples/valid/orders_v1.csv
-uv run --locked functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
+uv run --locked --package validator functions/validator/function_app.py sample samples/valid/orders_v1.csv
+uv run --locked --package validator functions/validator/function_app.py sample samples/invalid/orders_invalid.csv
 ```
 
 `test_pure.py`はAzure SDKを使わずに公開関数を確かめる。`sample`では、VALIDとINVALIDの構造化された結果を読む。続けて、不正サンプルのコピーを1項目ずつ書き換え、どのエラーが消え、どのエラーが残るかを記録する。CSVの規則は[アーキテクチャのAzure Functions節](architecture.md#azure-functionsの責務)を参照する。
@@ -309,7 +309,7 @@ az account show --subscription Personal-Sandbox --query '{name:name,state:state,
 `AZURE_CLIENT_ID`は設定しない。ローカルの`storage.py`はAzure CLIのログインで認証するので、User Assigned Managed IdentityのClient IDを指定すると接続方法が変わってしまう。`userType`が`user`で、対象のSubscriptionであることを確かめてから、別のターミナルでFunctionsホストを起動する。
 
 ```bash
-uv run --locked functions/validator/function_app.py serve
+uv run --locked --package validator functions/validator/function_app.py serve
 ```
 
 ローカルのHTTP呼び出しでは、Azure CLIのログインで取得したETagを使う。ローカルではFunction keyは不要である。
@@ -327,18 +327,18 @@ jq -n --arg etag "$LAB_ETAG" \
 
 ### 3. 依存関係をロックする
 
-依存関係の正は、`function_app.py`に書いたPEP 723のインラインメタデータと、隣に置くロックファイルである。
+依存関係の正は、`functions/validator/pyproject.toml`と、リポジトリのルートにあるworkspace共通の`uv.lock`である。workspaceの構成と、PEP 723で管理するものの範囲は[ADR-0014](adr/0014-manage-function-dependencies-with-uv-workspace.md)にある。
 
 ```bash
-uv lock --script functions/validator/function_app.py
-uv run --locked functions/validator/function_app.py test
+uv lock
+uv run --locked --package validator functions/validator/function_app.py test
 ```
 
-`uv lock --script`が作るロックファイルをレビューし、`--locked`付きで実行してもロックが変わらないことを確かめる。`requirements.txt`と`pyproject.toml`は作らない。
+`uv lock`による`uv.lock`の差分をレビューし、`--locked`付きで実行してもロックが変わらないことを確かめる。`requirements.txt`は作らない。
 
 ### 4. Azure Functions用の依存関係を生成する
 
-Azure FunctionsのホストはPEP 723のメタデータを読んで依存関係をインストールしない。そこで、Linux x86_64・Python 3.14の環境でロックどおりの依存関係を`.python_packages/lib/site-packages`へ配置し、そのディレクトリごと発行する。生成処理は`scripts/validator/package.py`にまとめてあり、ハッシュを検証しながらwheelだけをインストールする。
+Azure Functionsのホストは`pyproject.toml`を読んで依存関係をインストールしない。そこで、Linux x86_64・Python 3.14の環境でロックどおりの依存関係を`.python_packages/lib/site-packages`へ配置し、そのディレクトリごと発行する。生成処理は`scripts/validator/package.py`にまとめてあり、ハッシュを検証しながらwheelだけをインストールする。
 
 配置先はリポジトリ内の`.artifacts/`の下に、実行のたびに新しい名前で指定する。Macでは固定したLinux x86_64コンテナーで生成し、Linux x86_64では`--docker`を省く。
 
@@ -394,7 +394,7 @@ func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRI
 )
 ```
 
-`--python`で配置先の言語を明示している。PEP 723と事前に生成したパッケージを使う配置先では、Core Toolsが言語を自動で判定できないためである。
+`--python`で配置先の言語を明示している。事前に生成したパッケージを使う配置先では、Core Toolsが言語を自動で判定できないためである。
 
 発行後は、Function keyを付けて次の呼び出しを行い、結果が[HTTP契約](architecture.md#http契約)どおりかを確かめる。
 
@@ -408,7 +408,7 @@ func azure functionapp publish "$FUNCTION_APP_NAME" --subscription "$ARM_SUBSCRI
 
 - ローカルテストが成功し、正常なCSVと不正なCSVの構造化された結果を説明できる。
 - `validation.py`をAzure SDKなしでテストでき、`function_app.py`と`storage.py`の責務を説明できる。
-- PEP 723のメタデータと隣接するロックから、Ubuntu 24.04でAzure Functions用のパッケージを生成できる。
+- `pyproject.toml`とworkspaceの`uv.lock`から、Ubuntu 24.04でAzure Functions用のパッケージを生成できる。
 - 承認されたTerraform planどおりに基盤を構築し、Function key付きのHTTP呼び出しでローカルと同じ結果を得られる。
 - 業務Reject（HTTP 200・`INVALID`）とシステム障害（HTTP 5xx）を区別できる。
 

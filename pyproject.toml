@@ -1,0 +1,7 @@
+# Azure validatorとAWS Lambdaの依存を1つのuv.lockで固定するworkspace。
+# Glue用のSpark検査とscripts/の単体ツールは、Pythonの版や実行場所が異なるためPEP 723で管理する。
+[tool.uv.workspace]
+members = ["functions/validator", "functions/aws"]
+
+[dependency-groups]
+dev = ["ruff==0.17.2", "ty==0.0.92"]

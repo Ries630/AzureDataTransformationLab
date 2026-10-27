@@ -18,8 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 # 個人設定や追加の実データを追跡しても、ここで明示されないファイルは収集しない。
 ALLOWED_FILES = frozenset(
     {
+        "pyproject.toml",
+        "uv.lock",
         "functions/aws/handler.py",
-        "functions/aws/handler.py.lock",
+        "functions/aws/pyproject.toml",
+        "functions/validator/pyproject.toml",
         "functions/validator/validation.py",
         "glue/transform_orders.py",
         "workflows/aws/pipeline.asl.json",
@@ -40,7 +43,6 @@ ALLOWED_FILES = frozenset(
         "scripts/aws/verify-bundle.ps1",
         "scripts/aws/verify-bundle.sh",
         "scripts/aws/test_pipeline.py",
-        "scripts/aws/test_pipeline.py.lock",
         "scripts/aws/test_spark.py",
         "scripts/aws/test_spark.py.lock",
         "scripts/aws/test_bundle.py",
@@ -143,6 +145,21 @@ def collect(repo: Path, commit: str) -> dict[str, bytes]:
     return result
 
 
+def lambda_dependencies(lock: dict) -> set[tuple[str, str]]:
+    """workspaceのlockから、Lambdaメンバーが推移的に依存するパッケージと版を集める。"""
+    packages = {item["name"]: item for item in lock["package"]}
+    pending = ["aws-lambda"]
+    seen = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        pending.extend(item["name"] for item in packages[name].get("dependencies", []))
+    # メンバー自身はビルドしないため、配置される依存には含めない。
+    return {(name, packages[name]["version"]) for name in seen - {"aws-lambda"}}
+
+
 def package_manifest(content: bytes, source: dict[str, bytes]) -> dict:
     """配置物のコード・lock・依存・対象環境を収集したcommitへ結び付ける。"""
     import io
@@ -207,10 +224,10 @@ def package_manifest(content: bytes, source: dict[str, bytes]) -> dict:
                 raise ValueError("Lambda ZIPのコードが指定commitと一致しません。")
         if manifest["validation_sha256"] != sha256(
             source["functions/validator/validation.py"]
-        ) or manifest["lock_sha256"] != sha256(source["functions/aws/handler.py.lock"]):
+        ) or manifest["lock_sha256"] != sha256(source["uv.lock"]):
             raise ValueError("Lambdaの共通コードまたは依存lockが一致しません。")
-        lock = tomllib.loads(source["functions/aws/handler.py.lock"].decode())
-        expected = sorted((item["name"], item["version"]) for item in lock["package"])
+        lock = tomllib.loads(source["uv.lock"].decode())
+        expected = sorted(lambda_dependencies(lock))
         actual = sorted((item["name"], item["version"]) for item in manifest["dependencies"])
         if actual != expected:
             raise ValueError("Lambda依存版がlockと一致しません。")
