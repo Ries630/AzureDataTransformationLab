@@ -41,8 +41,10 @@ def build_in_docker(destination: Path) -> None:
             f"type=bind,src={root / 'functions/validator'},dst=/src/functions/validator,readonly",
             # workspaceのlock検査には全メンバーの定義が必要なため、AWS側はpyprojectだけ渡す。
             "--mount",
-            f"type=bind,src={root / 'functions/aws/pyproject.toml'},"
-            "dst=/src/functions/aws/pyproject.toml,readonly",
+            (
+                f"type=bind,src={root / 'functions/aws/pyproject.toml'},"
+                "dst=/src/functions/aws/pyproject.toml,readonly"
+            ),
             "--mount",
             f"type=bind,src={root / 'scripts/validator'},dst=/src/scripts/validator,readonly",
             "--mount",

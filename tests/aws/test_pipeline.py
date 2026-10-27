@@ -440,9 +440,12 @@ class RetryReviewTests(ServiceBoundaryCase):
             ReadTimeoutError(endpoint_url="https://example.invalid"),
             ClientError({"Error": {"Code": "SlowDown"}}, "ListObjectsV2"),
         ]
-        env = dict(
-            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
-        )
+        env = {
+            "BUCKET_NAME": "bucket",
+            "STATE_TABLE": "table",
+            "CRAWLER_NAME": "crawler",
+            "GLUE_JOB_NAME": "job",
+        }
         for operation in [
             "validate",
             "poll_crawler",
@@ -475,9 +478,12 @@ class RetryReviewTests(ServiceBoundaryCase):
         import json
         from unittest.mock import patch
 
-        env = dict(
-            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
-        )
+        env = {
+            "BUCKET_NAME": "bucket",
+            "STATE_TABLE": "table",
+            "CRAWLER_NAME": "crawler",
+            "GLUE_JOB_NAME": "job",
+        }
         state = {
             "input": {"bucket": "bucket", "key": "landing/a.csv", "etag": "e", "inputId": "i" * 64},
             "attempt": {"attemptId": "attempt", "executionArn": "arn:execution"},
@@ -525,9 +531,12 @@ class RetryReviewTests(ServiceBoundaryCase):
 
         from botocore.exceptions import ClientError
 
-        env = dict(
-            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
-        )
+        env = {
+            "BUCKET_NAME": "bucket",
+            "STATE_TABLE": "table",
+            "CRAWLER_NAME": "crawler",
+            "GLUE_JOB_NAME": "job",
+        }
         for spelling, run_id in (
             ("Id", "jr-id"),
             ("JobRunId", "jr-lower"),
@@ -613,9 +622,12 @@ class RetryReviewTests(ServiceBoundaryCase):
         import json
         from unittest.mock import patch
 
-        env = dict(
-            BUCKET_NAME="bucket", STATE_TABLE="table", CRAWLER_NAME="crawler", GLUE_JOB_NAME="job"
-        )
+        env = {
+            "BUCKET_NAME": "bucket",
+            "STATE_TABLE": "table",
+            "CRAWLER_NAME": "crawler",
+            "GLUE_JOB_NAME": "job",
+        }
         s3, glue, sfn = (Mock() for _ in range(3))
         table = Mock()
         sdk_clients = {"s3": s3, "glue": glue, "stepfunctions": sfn}

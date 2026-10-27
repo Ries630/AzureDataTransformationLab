@@ -82,10 +82,8 @@ def _has_strict_csv_syntax(text: str) -> bool:
             continue
 
         if after_quote:
-            if character == ",":
-                field_start = True
-                after_quote = False
-            elif character in "\r\n":
+            # 閉じ引用符の後に続けられるのは、区切りか改行だけ。
+            if character in ",\r\n":
                 field_start = True
                 after_quote = False
             else:
@@ -97,9 +95,7 @@ def _has_strict_csv_syntax(text: str) -> bool:
             in_quotes = True
         elif character == '"':
             return False
-        elif character == ",":
-            field_start = True
-        elif character in "\r\n":
+        elif character in ",\r\n":
             field_start = True
         else:
             field_start = False
@@ -195,7 +191,7 @@ def _validate_ordered_at(value: str) -> str | None:
             return "ordered_at must be a valid ISO 8601 datetime"
 
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        datetime.fromisoformat(value)
     except ValueError:
         return "ordered_at must be a valid ISO 8601 datetime"
     return None

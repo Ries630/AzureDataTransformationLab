@@ -44,7 +44,7 @@ class ParseTests(unittest.TestCase):
         """入力行の欠落を変換成功として扱わない。"""
         with self.assertRaises(TransformError):
             check_rows(
-                [{"amount": Decimal("1"), "taxIncludedAmount": Decimal("1.1"), "orderedAt": "x"}], 2
+                [{"amount": Decimal(1), "taxIncludedAmount": Decimal("1.1"), "orderedAt": "x"}], 2
             )
 
     def test_null_cast_fails(self):
@@ -88,7 +88,7 @@ class SparkTests(unittest.TestCase):
         values = dict(row)
         for column in ("amount", "taxIncludedAmount"):
             values[column] = Decimal(values[column])
-        instant = datetime.fromisoformat(values["orderedAt"].replace("Z", "+00:00"))
+        instant = datetime.fromisoformat(values["orderedAt"])
         if instant.tzinfo is not None:
             instant = instant.astimezone(UTC)
         values["orderedAt"] = instant
@@ -138,7 +138,7 @@ class SparkTests(unittest.TestCase):
         self.assertEqual(rows[0]["Amount"], "007")
         self.assertEqual(rows[0]["note"], "quoted\nline")
         self.assertEqual(
-            list(csv.DictReader(io.StringIO(serialize_rows(names, rows).decode())))[0]["empty"], ""
+            next(csv.DictReader(io.StringIO(serialize_rows(names, rows).decode())))["empty"], ""
         )
 
     def test_actual_invalid_cast_fails(self):

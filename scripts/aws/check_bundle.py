@@ -148,7 +148,9 @@ def isolated_environment(temporary: Path) -> dict[str, str]:
 
 def command(arguments: list[str], cwd: Path, environment: dict[str, str]) -> None:
     """外部ツールの結果を判定し、stdoutや個人情報をreportに取り込まない。"""
-    result = subprocess.run(arguments, cwd=cwd, env=environment, capture_output=True, timeout=300)
+    result = subprocess.run(
+        arguments, cwd=cwd, env=environment, capture_output=True, timeout=300, check=False
+    )
     if result.returncode != 0:
         raise CheckFailure("COMMAND_FAILED:" + Path(arguments[0]).name)
 
@@ -280,10 +282,12 @@ def inspect_bundle(root: Path, report_path: Path) -> bool:
                     sys.executable,
                     "-I",
                     "-c",
-                    "import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
-                    "import boto3,handler,validation; assert callable(handler.handler); "
-                    "assert all(Path(m.__file__).is_relative_to(Path(sys.argv[1])) "
-                    "for m in (boto3,handler,validation))",
+                    (
+                        "import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+                        "import boto3,handler,validation; assert callable(handler.handler); "
+                        "assert all(Path(m.__file__).is_relative_to(Path(sys.argv[1])) "
+                        "for m in (boto3,handler,validation))"
+                    ),
                     str(package),
                 ],
                 source,

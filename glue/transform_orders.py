@@ -50,7 +50,7 @@ def parse_source(content: bytes) -> tuple[list[str], list[list[str]]]:
 def normalize_datetime(value: str) -> tuple[datetime, bool] | None:
     """zone付き日時はUTCへ、zone省略日時は壁時計のままNTZへ変換する。"""
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
         zoned = parsed.tzinfo is not None
         if zoned:
             parsed = parsed.astimezone(UTC).replace(tzinfo=None)
