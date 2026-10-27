@@ -25,15 +25,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-python-tools
-      - run: uv run --locked --only-group dev ruff check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
-      - run: uv run --locked --only-group dev ruff format --check functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
       - name: Type check with the locked dependencies
         run: |
           uv run --locked --package aws-lambda --group dev ty check \
             --extra-search-path functions/validator \
             functions/aws tests/aws/test_pipeline.py scripts/aws/package.py scripts/aws/test_pipeline.py
-      - run: uv run --locked --only-group dev ruff check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
-      - run: uv run --locked --only-group dev ruff format --check --target-version py311 glue tests/aws/test_transform.py scripts/aws/test_spark.py
       - name: Verify AWS processing contracts with SDK mocks
         run: uv run --locked --package aws-lambda scripts/aws/test_pipeline.py
       - name: Verify the shared CSV validation contract

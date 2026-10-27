@@ -118,8 +118,10 @@ def build(destination: Path, architecture: str, python_version: str) -> None:
                 "python",
                 "-I",
                 "-c",
-                "import sys; sys.path.insert(0, sys.argv[1]); import boto3, handler, validation; "
-                "assert callable(handler.handler)",
+                (
+                    "import sys; sys.path.insert(0, sys.argv[1]); import boto3, handler, validation; "
+                    "assert callable(handler.handler)"
+                ),
                 str(extracted),
             ],
             check=True,

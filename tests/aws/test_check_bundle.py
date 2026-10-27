@@ -108,6 +108,7 @@ class CheckerBoundaryTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, str(script), str(root), "--report", str(report)],
                 capture_output=True,
+                check=False,
             )
             self.assertEqual(result.returncode, 1)
             evidence = json.loads(report.read_text())

@@ -1,6 +1,7 @@
 """CSV検証のHTTP入口と、同じ依存環境で実行する学習用コマンド。"""
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -90,7 +91,7 @@ def build_validation_response(request: func.HttpRequest) -> func.HttpResponse:
         return json_response(
             {"code": "STORAGE_READ_FAILED", "message": "入力を取得できませんでした。"}, 502
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         # SDKの例外本文にはURLや認証情報が含まれ得るため、応答とログへ展開しない。
         return json_response(
             {"code": "INTERNAL_ERROR", "message": "入力検証を完了できませんでした。"}, 500
@@ -101,11 +102,9 @@ def build_validation_response(request: func.HttpRequest) -> func.HttpResponse:
 def validate(request: func.HttpRequest) -> func.HttpResponse:
     """検証結果を返す前に監視イベントを記録する。"""
     response = build_validation_response(request)
-    try:
+    # 監視ログの失敗で検証結果を500へ変えない。例外本文は機密を含み得るため記録しない。
+    with contextlib.suppress(Exception):
         log_validation_response(request, response)
-    except Exception:
-        # 監視ログの失敗で検証結果を500へ変えない。例外本文は機密を含み得るため記録しない。
-        pass
     return response
 
 

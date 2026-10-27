@@ -1,5 +1,10 @@
 target-version = "py314"
 line-length = 100
+# Markdown内のコードブロックは検査・整形の対象にしない。
+extend-exclude = ["*.md"]
 
-[lint]
-select = ["E", "F", "I", "UP", "B"]
+# Glue 5.1と同じPython 3.11で動かすファイル。
+[per-file-target-version]
+"glue/**" = "py311"
+"tests/aws/test_transform.py" = "py311"
+"scripts/aws/test_spark.py" = "py311"

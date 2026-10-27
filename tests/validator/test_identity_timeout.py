@@ -13,7 +13,7 @@ from pathlib import Path
 class HangingIdentityHandler(BaseHTTPRequestHandler):
     """トークン要求を受信してから解放されるまで応答しない。"""
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         """認証クライアントのタイムアウトを発生させるまで接続を保持する。"""
         server = self.server
         # 共有状態はHangingIdentityServerだけが持つため、型を絞ってから参照する。

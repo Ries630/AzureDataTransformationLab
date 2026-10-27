@@ -49,8 +49,6 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/bundle-pwsh" >> "$GITHUB_PATH"
       - name: Check bundle tooling
         run: |
-          uv run --locked --only-group dev ruff check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
-          uv run --locked --only-group dev ruff format --check scripts/aws/check_bundle.py scripts/aws/bundle.py scripts/aws/test_check_bundle.py tests/aws/test_check_bundle.py scripts/aws/test_bundle.py tests/aws/test_bundle.py scripts/aws/test_verify_bundle.py tests/aws/test_verify_bundle.py
           uv run scripts/aws/test_bundle.py
           uv run scripts/aws/test_verify_bundle.py
           uv run scripts/aws/test_check_bundle.py
