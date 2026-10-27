@@ -9,6 +9,8 @@ from unittest.mock import Mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "functions/validator"))
 spec = importlib.util.spec_from_file_location("aws_handler", ROOT / "functions/aws/handler.py")
+# 読込に失敗した場合はここで止め、型チェッカーにもNoneでないことを伝える。
+assert spec is not None and spec.loader is not None
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
@@ -37,8 +39,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(state["input"]["inputId"]), 64)
 
 
-class ServiceBoundaryTests(unittest.TestCase):
-    """世代条件・所有者条件・非公開失敗をAWS API境界で確認する。"""
+class ServiceBoundaryCase(unittest.TestCase):
+    """SDK境界のモックと初期状態を、境界を検査するテストクラスで共有する。"""
 
     def setUp(self):
         """各ケースへ独立したSDK境界を渡す。"""
@@ -51,6 +53,10 @@ class ServiceBoundaryTests(unittest.TestCase):
             "execution-new",
         )
         self.state["accepted"] = True
+
+
+class ServiceBoundaryTests(ServiceBoundaryCase):
+    """世代条件・所有者条件・非公開失敗をAWS API境界で確認する。"""
 
     def test_rejects_other_bucket_and_downstream_keys(self):
         """対象外の直接実行を拒否する。"""
@@ -340,12 +346,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(self.states["WaitLock"]["Next"], "Lock")
 
 
-class RecoveryRegressionTests(unittest.TestCase):
+class RecoveryRegressionTests(ServiceBoundaryCase):
     """起動拒否と開始不確定を区別する回帰検査。"""
-
-    def setUp(self):
-        """SDK境界の初期化を共有する。"""
-        ServiceBoundaryTests.setUp(self)
 
     def test_crawler_denied_start_clears_pending_with_owner_condition(self):
         """StartCrawlerの明確な未開始拒否は復旧を妨げない。"""
@@ -400,12 +402,8 @@ class RecoveryRegressionTests(unittest.TestCase):
         self.table.delete_item.assert_not_called()
 
 
-class RetryReviewTests(unittest.TestCase):
+class RetryReviewTests(ServiceBoundaryCase):
     """開始前の安全な復旧と通信障害分類を公開境界で検査する。"""
-
-    def setUp(self):
-        """SDK境界の初期化を共有する。"""
-        ServiceBoundaryTests.setUp(self)
 
     def test_prepare_failure_clears_pending_before_glue_can_start(self):
         """準備Lambdaが書込み後に応答を失ってもロックを残さない。"""
