@@ -14,8 +14,9 @@ import tempfile
 from importlib.metadata import distributions
 from pathlib import Path
 
+# CIと同じuv 0.13.5のイメージ。workspaceのuv.lockを読めるよう、uvの版をそろえる。
 BUILD_IMAGE = (
-    "ghcr.io/astral-sh/uv@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1"
+    "ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff"
 )
 
 

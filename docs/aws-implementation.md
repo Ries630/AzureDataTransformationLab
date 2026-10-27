@@ -45,7 +45,7 @@ uv run scripts/aws/package.py /tmp/adtl-lambda.zip --architecture arm64 --python
 Dockerを使う場合は、リポジトリを読み取り専用で渡し、出力用のディレクトリだけを書き込み可能にする。次の例は、Python 3.14 / Linux arm64でZIPの生成と実際のimportを確認したイメージに固定している。`REPOSITORY_ABSOLUTE_PATH`と`OUTPUT_ABSOLUTE_DIRECTORY`を実際の絶対パスに置き換え、出力ディレクトリを先に作っておく。
 
 ```bash
-docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE_PATH,dst=/src,readonly --mount type=bind,src=OUTPUT_ABSOLUTE_DIRECTORY,dst=/out -w /src ghcr.io/astral-sh/uv@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1 uv run scripts/aws/package.py /out/lambda.zip
+docker run --rm --platform linux/arm64 --mount type=bind,src=REPOSITORY_ABSOLUTE_PATH,dst=/src,readonly --mount type=bind,src=OUTPUT_ABSOLUTE_DIRECTORY,dst=/out -w /src ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff uv run scripts/aws/package.py /out/lambda.zip
 ```
 
 ### ローカルでの検査
