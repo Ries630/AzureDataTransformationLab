@@ -185,7 +185,7 @@ class CheckerBoundaryTests(unittest.TestCase):
                 validation = root / "functions/validator/validation.py"
                 validation.write_text("# validation")
                 lock = root / "uv.lock"
-                lock.write_text("package = []")
+                lock.write_text('[[package]]\nname = "aws-lambda"\nversion = "0.1.0"\n')
                 runtime = {
                     "python": "3.14",
                     "architecture": architecture,
